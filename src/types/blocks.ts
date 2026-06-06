@@ -154,6 +154,22 @@ export interface CmdBlock {
   command: string;
   output_var: string;
   wait: boolean;
+  administrator: boolean;
+  echo: boolean;
+}
+
+export interface PythonGlobal {
+  name: string;
+  value: string;
+}
+
+export interface PythonBlock {
+  kind: "python";
+  script: string;
+  requirements: string;
+  python_version: string;
+  globals: PythonGlobal[];
+  output_var: string;
 }
 
 // ── Union ─────────────────────────────────────────────────────────────────────
@@ -169,7 +185,7 @@ export type Block =
   | FunctionCallBlock
   | ArrayPushBlock | ArrayMergeBlock | ArrayGetBlock | ArraySearchBlock | ArrayDeleteBlock
   | DictAddBlock | DictCombineBlock | DictFindBlock | DictRemoveBlock
-  | CmdBlock;
+  | CmdBlock | PythonBlock;
 
 export type BlockKind = Block["kind"];
 
@@ -255,7 +271,9 @@ export const BLOCK_CATALOG: BlockMeta[] = [
 
   // ── System ────────────────────────────────────────────────────────────────
   { kind: "cmd", label: "CMD", category: "system", color: "#64748B", icon: "ti-terminal-2",
-    defaultData: { command:"", output_var:"CMDReturn", wait:true } },
+    defaultData: { command:"", output_var:"CMDReturn", wait:true, administrator:false, echo:false } },
+  { kind: "python", label: "Python", category: "system", color: "#3776AB", icon: "ti-brand-python",
+    defaultData: { script:"print('Hello from Python')", requirements:"", python_version:"3.12", globals:[], output_var:"PythonReturn" } },
 
   // ── Function ──────────────────────────────────────────────────────────────
   { kind: "function_call", label: "Appel Fonction", category: "function", color: "#A855F7", icon: "ti-function",

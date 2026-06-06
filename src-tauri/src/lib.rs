@@ -47,6 +47,8 @@ pub fn run() {
             ipc::select_screen_region,
             ipc::submit_region_selection,
             ipc::cancel_region_selection,
+            ipc::request_cmd_admin_access,
+            ipc::is_app_elevated,
             // Functions directory
             ipc::get_exe_dir,
             ipc::get_functions_dir,

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Result};
 use enigo::{Direction, Enigo, Key, Keyboard, Mouse, Settings};
-use log::{info, warn};
+use log::info;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
@@ -636,22 +636,40 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
 
         Block::Cmd(b) => {
             let cmd_line = resolve_expressions_in_text(&b.command, vars);
+            let cmd_line = with_cmd_echo(&cmd_line, b.echo);
             let out_var = interpolate_text(&b.output_var, vars);
-            if b.wait {
-                let result = exec_cmd_sync(&cmd_line);
+            if b.administrator {
+                let exec_result = if is_process_elevated() {
+                    exec_cmd_spawn(&cmd_line, b.echo)
+                } else {
+                    exec_cmd_admin(&cmd_line, b.echo)
+                };
+                if let Err(err) = &exec_result {
+                    let _ = h.emit("engine://log", format!("CMD admin: {err}"));
+                }
+                let log_entry = serde_json::json!({
+                    "command": cmd_line,
+                    "stdout": "",
+                    "stderr": exec_result.err().unwrap_or_default(),
+                    "exit_code": null,
+                    "timestamp": chrono::Local::now().format("%H:%M:%S").to_string(),
+                    "administrator": true,
+                });
+                let _ = h.emit("engine://cmd-log", serde_json::json!({"node_id": node_id, "entry": log_entry}));
+            } else if b.wait {
+                let result = exec_cmd_sync(&cmd_line, b.echo);
                 let log_entry = serde_json::json!({
                     "command": cmd_line,
                     "stdout": result.stdout,
                     "stderr": result.stderr,
                     "exit_code": result.exit_code,
                     "timestamp": chrono::Local::now().format("%H:%M:%S").to_string(),
+                    "echo": b.echo,
                 });
                 let _ = h.emit("engine://cmd-log", serde_json::json!({"node_id": node_id, "entry": log_entry}));
-                if !out_var.is_empty() {
-                    vars.insert(out_var, result.stdout.trim_end().to_string());
-                }
+                if !out_var.is_empty() { vars.insert(out_var, result.stdout.trim_end().to_string()); }
             } else {
-                let _ = exec_cmd_spawn(&cmd_line);
+                let _ = exec_cmd_spawn(&cmd_line, b.echo);
                 let log_entry = serde_json::json!({
                     "command": cmd_line,
                     "stdout": "",
@@ -659,8 +677,26 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
                     "exit_code": null,
                     "timestamp": chrono::Local::now().format("%H:%M:%S").to_string(),
                     "async": true,
+                    "echo": b.echo,
                 });
                 let _ = h.emit("engine://cmd-log", serde_json::json!({"node_id": node_id, "entry": log_entry}));
+            }
+            "".into()
+        }
+        Block::Python(b) => {
+            let result = exec_python_uv(b, vars);
+            let log_entry = serde_json::json!({
+                "command": format!("uv run --python {} autobot_script.py", b.python_version),
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.exit_code,
+                "timestamp": chrono::Local::now().format("%H:%M:%S").to_string(),
+                "python": true,
+            });
+            let _ = h.emit("engine://cmd-log", serde_json::json!({"node_id": node_id, "entry": log_entry}));
+            let out_var = interpolate_text(&b.output_var, vars);
+            if !out_var.is_empty() {
+                vars.insert(out_var, result.stdout.trim_end().to_string());
             }
             "".into()
         }
@@ -1032,15 +1068,40 @@ fn bk(b: &Block) -> &'static str {
         Block::ArraySearch(_)=>"array_search",Block::ArrayDelete(_)=>"array_delete",
         Block::DictAdd(_)=>"dict_add",Block::DictCombine(_)=>"dict_combine",
         Block::DictFind(_)=>"dict_find",Block::DictRemove(_)=>"dict_remove",
-        Block::Cmd(_)=>"cmd",
+        Block::Cmd(_)=>"cmd",Block::Python(_)=>"python",
     }
 }
 
 struct CmdExecResult { stdout: String, stderr: String, exit_code: i32 }
 
-fn exec_cmd_sync(cmd_line: &str) -> CmdExecResult {
+pub fn restart_app_as_admin(handle: &AppHandle) -> Result<(), String> {
+    restart_current_exe_as_admin()?;
+    let h = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        h.exit(0);
+    });
+    Ok(())
+}
+
+fn with_cmd_echo(cmd_line: &str, echo: bool) -> String {
+    if !cfg!(target_os = "windows") || echo {
+        cmd_line.to_string()
+    } else {
+        format!("@echo off\r\n{cmd_line}")
+    }
+}
+
+fn exec_cmd_sync(cmd_line: &str, show_console: bool) -> CmdExecResult {
     let output = if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd").args(["/C", cmd_line]).output()
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", cmd_line]);
+        #[cfg(target_os = "windows")]
+        if !show_console {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        cmd.output()
     } else {
         std::process::Command::new("sh").args(["-c", cmd_line]).output()
     };
@@ -1058,13 +1119,197 @@ fn exec_cmd_sync(cmd_line: &str) -> CmdExecResult {
     }
 }
 
-fn exec_cmd_spawn(cmd_line: &str) -> Result<(), String> {
+fn exec_cmd_spawn(cmd_line: &str, show_console: bool) -> Result<(), String> {
     if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd").args(["/C", cmd_line]).spawn().map_err(|e| e.to_string())?;
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", cmd_line]);
+        #[cfg(target_os = "windows")]
+        if !show_console {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
     } else {
         std::process::Command::new("sh").args(["-c", cmd_line]).spawn().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn exec_cmd_admin(cmd_line: &str, show_console: bool) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNORMAL};
+
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    let verb = wide("runas");
+    let file = wide("cmd.exe");
+    let params = wide(&format!("/C {cmd_line}"));
+    let cwd = std::env::current_dir().ok();
+    let cwd_wide = cwd
+        .as_ref()
+        .map(|p| p.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>());
+    let rc = unsafe {
+        ShellExecuteW(
+            0 as HWND,
+            verb.as_ptr(),
+            file.as_ptr(),
+            params.as_ptr(),
+            cwd_wide.as_ref().map(|v| v.as_ptr()).unwrap_or(std::ptr::null()),
+            if show_console { SW_SHOWNORMAL } else { SW_HIDE },
+        )
+    } as isize;
+    if rc <= 32 { Err(format!("ShellExecuteW/runas a echoue ({rc})")) } else { Ok(()) }
+}
+
+#[cfg(target_os = "windows")]
+pub fn is_process_elevated() -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return false;
+        }
+        let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut returned = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elevation as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned,
+        ) != 0;
+        let _ = CloseHandle(token);
+        ok && elevation.TokenIsElevated != 0
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_process_elevated() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn restart_current_exe_as_admin() -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    fn wide_os(s: &OsStr) -> Vec<u16> {
+        s.encode_wide().chain(std::iter::once(0)).collect()
+    }
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let verb = wide("runas");
+    let file = wide_os(exe.as_os_str());
+    let cwd = exe.parent().map(|p| wide_os(p.as_os_str()));
+    let rc = unsafe {
+        ShellExecuteW(
+            0 as HWND,
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            cwd.as_ref().map(|v| v.as_ptr()).unwrap_or(std::ptr::null()),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+    if rc <= 32 { Err(format!("Relance admin echouee ({rc})")) } else { Ok(()) }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn restart_current_exe_as_admin() -> Result<(), String> {
+    Err("La relance administrateur automatique est disponible uniquement sous Windows.".into())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exec_cmd_admin(cmd_line: &str, show_console: bool) -> Result<(), String> {
+    exec_cmd_spawn(cmd_line, show_console)
+}
+
+fn exec_python_uv(b: &crate::blocks::PythonBlock, vars: &Vars) -> CmdExecResult {
+    let work_dir = std::env::temp_dir().join(format!(
+        "autobot_python_{}_{}",
+        std::process::id(),
+        chrono::Local::now().timestamp_millis()
+    ));
+    if let Err(e) = std::fs::create_dir_all(&work_dir) {
+        return CmdExecResult { stdout: String::new(), stderr: e.to_string(), exit_code: -1 };
+    }
+
+    let script_path = work_dir.join("autobot_script.py");
+    let req_path = work_dir.join("requirements.txt");
+    let mut script = String::new();
+    script.push_str("# Auto Bot globals\n");
+    for g in &b.globals {
+        let name = g.name.trim();
+        if !is_valid_python_ident(name) {
+            continue;
+        }
+        let value = resolve_expressions_in_text(&g.value, vars);
+        let json_value = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".into());
+        script.push_str(name);
+        script.push_str(" = ");
+        script.push_str(&json_value);
+        script.push('\n');
+    }
+    script.push_str("\n# Auto Bot script\n");
+    script.push_str(&b.script);
+    script.push('\n');
+    if let Err(e) = std::fs::write(&script_path, script) {
+        return CmdExecResult { stdout: String::new(), stderr: e.to_string(), exit_code: -1 };
+    }
+
+    let mut cmd = std::process::Command::new("uv");
+    cmd.current_dir(&work_dir).arg("run");
+    let py = b.python_version.trim();
+    if !py.is_empty() {
+        cmd.args(["--python", py]);
+    }
+    if !b.requirements.trim().is_empty() {
+        if let Err(e) = std::fs::write(&req_path, &b.requirements) {
+            return CmdExecResult { stdout: String::new(), stderr: e.to_string(), exit_code: -1 };
+        }
+        cmd.arg("--with-requirements").arg(&req_path);
+    }
+    cmd.arg(&script_path);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    match cmd.output() {
+        Ok(o) => CmdExecResult {
+            stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
+            exit_code: o.status.code().unwrap_or(-1),
+        },
+        Err(e) => CmdExecResult {
+            stdout: String::new(),
+            stderr: format!("uv introuvable ou impossible a lancer: {e}"),
+            exit_code: -1,
+        },
+    }
+}
+
+fn is_valid_python_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else { return false };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
 fn fuzzy_match(text: &str, pattern: &str, max_dist: usize) -> bool {

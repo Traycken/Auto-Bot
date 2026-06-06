@@ -30,7 +30,8 @@ const BLACKLIST = new Set([
   "position","unique","pairs","key","values",
   "match_text","match_case","match_whole_word","use_regex",
   "year","month","day","hour","minute","second",
-  "match_mode","command","wait",
+  "match_mode","command","wait","administrator","echo",
+  "script","requirements","python_version","globals",
 ]);
 
 const S = {
@@ -478,7 +479,28 @@ function ImageFields({ data, onChange }: { data:Record<string,unknown>; onChange
 
 function CmdFields({ data, onChange, nodeId }: { data:Record<string,unknown>; onChange:(p:Record<string,unknown>)=>void; nodeId:string }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const saveRestartSnapshotWithNodePatch = useEditorStore(s => s.saveRestartSnapshotWithNodePatch);
   const wait = data.wait !== false;
+  const administrator = !!data.administrator;
+  const echo = !!data.echo;
+  const toggleAdmin = async () => {
+    if (administrator) {
+      onChange({ administrator:false });
+      return;
+    }
+    try {
+      const elevated = await invoke<boolean>("is_app_elevated").catch(() => false);
+      if (elevated) {
+        onChange({ administrator:true });
+        return;
+      }
+      saveRestartSnapshotWithNodePatch(nodeId, { administrator:true });
+      await invoke("request_cmd_admin_access");
+    } catch (err) {
+      alert(`Acces administrateur refuse ou indisponible.\n${String(err)}`);
+      onChange({ administrator:false });
+    }
+  };
   return (
     <>
       <div style={S.row}>
@@ -511,9 +533,108 @@ function CmdFields({ data, onChange, nodeId }: { data:Record<string,unknown>; on
           </p>
         )}
       </div>
+      <div style={S.row}>
+        <span style={S.label}>Options CMD</span>
+        <div style={{ display:"flex", gap:4 }}>
+          <button onClick={toggleAdmin} style={{
+            ...S.btn, flex:1,
+            background: administrator ? "#EF9F2722" : "#111113",
+            borderColor: administrator ? "#EF9F27" : "#2a2a2e",
+            color: administrator ? "#F59E0B" : "#666",
+          }}>
+            <i className="ti ti-shield-lock" style={{ fontSize:11 }} /> Administrateur
+          </button>
+          <button onClick={() => onChange({ echo:!echo })} style={{
+            ...S.btn, flex:1,
+            background: echo ? "#64748B22" : "#111113",
+            borderColor: echo ? "#64748B" : "#2a2a2e",
+            color: echo ? "#94A3B8" : "#666",
+          }}>
+            <i className="ti ti-terminal" style={{ fontSize:11 }} /> @echo {echo ? "on" : "off"}
+          </button>
+        </div>
+      </div>
       {wait && (
         <SmartInput label="Var. retour (%CMDReturn)" value={(data.output_var as string)??"CMDReturn"} onChange={v => onChange({ output_var:v })} />
       )}
+      <button onClick={() => setHistoryOpen(true)} style={{ ...S.btn, width:"100%", marginTop:4 }}>
+        <i className="ti ti-terminal-2" style={{ fontSize:11 }} /> Historique console
+      </button>
+      {historyOpen && <CmdHistoryModal nodeId={nodeId} onClose={() => setHistoryOpen(false)} />}
+    </>
+  );
+}
+
+function PythonFields({ data, onChange, nodeId }: { data:Record<string,unknown>; onChange:(p:Record<string,unknown>)=>void; nodeId:string }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const globals = (data.globals as { name:string; value:string }[] | undefined) ?? [];
+  const updateGlobal = (index:number, key:"name"|"value", value:string) => {
+    const next = [...globals];
+    next[index] = { ...next[index], [key]: value };
+    onChange({ globals: next });
+  };
+  const addGlobal = () => onChange({ globals: [...globals, { name:`var_${globals.length + 1}`, value:"" }] });
+  const removeGlobal = (index:number) => onChange({ globals: globals.filter((_, i) => i !== index) });
+
+  return (
+    <>
+      <div style={S.row}>
+        <span style={S.label}>Version Python UV</span>
+        <input
+          type="text"
+          value={(data.python_version as string)??"3.12"}
+          onChange={e => onChange({ python_version:e.target.value })}
+          style={S.input}
+          placeholder="3.12, 3.11, >=3.10"
+        />
+      </div>
+      <div style={S.row}>
+        <span style={S.label}>Requirements</span>
+        <textarea
+          value={(data.requirements as string)??""}
+          onChange={e => onChange({ requirements:e.target.value })}
+          style={{ ...S.input, minHeight:64, resize:"vertical", fontFamily:"monospace", fontSize:11 }}
+          placeholder={"requests==2.32.3\npandas"}
+        />
+      </div>
+      <div style={S.row}>
+        <span style={S.label}>Variables globales injectees</span>
+        {globals.map((g, i) => (
+          <div key={i} style={{ display:"flex", gap:4, marginBottom:5 }}>
+            <input
+              type="text"
+              value={g.name}
+              onChange={e => updateGlobal(i, "name", e.target.value)}
+              style={{ ...S.input, flex:1 }}
+              placeholder="nom"
+            />
+            <input
+              type="text"
+              value={g.value}
+              onChange={e => updateGlobal(i, "value", e.target.value)}
+              style={{ ...S.input, flex:2 }}
+              placeholder="%maVariable"
+            />
+            <button onClick={() => removeGlobal(i)} style={{ ...S.btn, color:"#E24B4A", borderColor:"#E24B4A33" }}>
+              <i className="ti ti-trash" style={{ fontSize:10 }} />
+            </button>
+          </div>
+        ))}
+        <button onClick={addGlobal} style={{ ...S.btn, width:"100%" }}>
+          <i className="ti ti-plus" style={{ fontSize:11 }} /> Ajouter variable
+        </button>
+      </div>
+      <div style={S.row}>
+        <span style={S.label}>Editeur Python</span>
+        <textarea
+          value={(data.script as string)??""}
+          onChange={e => onChange({ script:e.target.value })}
+          style={{ ...S.input, minHeight:220, resize:"vertical", fontFamily:"Consolas, monospace", fontSize:12, lineHeight:1.45, tabSize:2 }}
+          spellCheck={false}
+          placeholder={"print('Hello')"}
+        />
+      </div>
+      <SmartInput label="Var. retour stdout" value={(data.output_var as string)??"PythonReturn"} onChange={v => onChange({ output_var:v })} />
       <button onClick={() => setHistoryOpen(true)} style={{ ...S.btn, width:"100%", marginTop:4 }}>
         <i className="ti ti-terminal-2" style={{ fontSize:11 }} /> Historique console
       </button>
@@ -1332,6 +1453,7 @@ export function Inspector() {
             )}
 
             {kind==="cmd" && <CmdFields data={data} onChange={patch} nodeId={node.id} />}
+            {kind==="python" && <PythonFields data={data} onChange={patch} nodeId={node.id} />}
 
             {/* Generic fallback */}
             {genericFields.map(([k,v]) => (

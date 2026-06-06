@@ -84,6 +84,8 @@ interface EditorStore {
   pushLog: (entry: Omit<LogEntry, "ts">) => void;
   clearLog: () => void;
   pushCmdLog: (nodeId: string, entry: CmdLogEntry) => void;
+  saveRestartSnapshot: () => void;
+  saveRestartSnapshotWithNodePatch: (id: string, patch: Record<string, unknown>) => void;
   initEngineListeners: () => () => void;
 
   saveActiveTab: () => Promise<void>;
@@ -167,15 +169,36 @@ function updateActiveTab(
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 const INITIAL_MAIN_TAB = makeInitialMainTab();
+const RESTART_SNAPSHOT_KEY = "autobot:admin-restart-snapshot";
+
+function loadRestartSnapshot(): Partial<Pick<EditorStore, "tabs" | "activeTabId" | "selectedNodeId" | "variables">> | null {
+  try {
+    const raw = localStorage.getItem(RESTART_SNAPSHOT_KEY);
+    if (!raw) return null;
+    localStorage.removeItem(RESTART_SNAPSHOT_KEY);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.tabs) || typeof parsed.activeTabId !== "string") return null;
+    return {
+      tabs: parsed.tabs,
+      activeTabId: parsed.activeTabId,
+      selectedNodeId: parsed.selectedNodeId ?? null,
+      variables: Array.isArray(parsed.variables) ? parsed.variables : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+const restartSnapshot = loadRestartSnapshot();
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
-  tabs: [INITIAL_MAIN_TAB],
-  activeTabId: INITIAL_MAIN_TAB.id,
-  selectedNodeId: null,
+  tabs: restartSnapshot?.tabs ?? [INITIAL_MAIN_TAB],
+  activeTabId: restartSnapshot?.activeTabId ?? INITIAL_MAIN_TAB.id,
+  selectedNodeId: restartSnapshot?.selectedNodeId ?? null,
   status: "idle",
   log: [],
   cmdHistory: {},
-  variables: [],
+  variables: restartSnapshot?.variables ?? [],
   clipboard: [],
 
   get nodes() { return getActiveTab(get())?.nodes ?? []; },
@@ -423,6 +446,33 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set(s => ({ log: [...s.log.slice(-299), { ...entry, ts: Date.now() }] }));
   },
   clearLog() { set({ log: [] }); },
+
+  saveRestartSnapshot() {
+    const { tabs, activeTabId, selectedNodeId, variables } = get();
+    localStorage.setItem(RESTART_SNAPSHOT_KEY, JSON.stringify({
+      tabs,
+      activeTabId,
+      selectedNodeId,
+      variables,
+      savedAt: Date.now(),
+    }));
+  },
+  saveRestartSnapshotWithNodePatch(id, patch) {
+    const state = get();
+    const tabs = state.tabs.map(t => ({
+      ...t,
+      nodes: t.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, ...patch } } as MacroNode : n),
+      dirty: true,
+    }));
+    localStorage.setItem(RESTART_SNAPSHOT_KEY, JSON.stringify({
+      tabs,
+      activeTabId: state.activeTabId,
+      selectedNodeId: state.selectedNodeId,
+      variables: state.variables,
+      savedAt: Date.now(),
+    }));
+    set({ tabs });
+  },
 
   pushCmdLog(nodeId, entry) {
     set(s => {

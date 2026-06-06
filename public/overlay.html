@@ -4,47 +4,18 @@
 <meta charset="UTF-8">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100vw;height:100vh;background:rgba(0,0,0,0.4);cursor:crosshair;user-select:none;overflow:hidden}
-#hint{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.82);color:#fff;padding:8px 20px;border-radius:8px;font:13px monospace;pointer-events:none;border:1px solid #555;white-space:nowrap}
-#sel{position:fixed;display:none;border:2px solid #E84C1E;background:rgba(232,76,30,0.12);pointer-events:none}
-#coords{position:fixed;background:rgba(0,0,0,0.85);color:#E84C1E;font:11px monospace;padding:3px 8px;border-radius:4px;pointer-events:none;display:none}
-#cancel{position:fixed;top:16px;right:16px;background:#E24B4A;color:#fff;border:none;border-radius:6px;padding:7px 16px;font:12px monospace;cursor:pointer;z-index:9999}
+html,body{width:100vw;height:100vh;background:rgba(0,0,0,0.35);cursor:crosshair;user-select:none;overflow:hidden}
+#hint{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.82);color:#fff;padding:8px 20px;border-radius:8px;font:13px monospace;pointer-events:none;border:1px solid #555;white-space:nowrap;z-index:10}
+#sel{position:fixed;display:none;border:2px solid #E84C1E;background:rgba(232,76,30,0.10);pointer-events:none;z-index:5}
+#coords{position:fixed;background:rgba(0,0,0,0.85);color:#E84C1E;font:11px monospace;padding:3px 8px;border-radius:4px;pointer-events:none;display:none;z-index:10}
+#cancel-btn{position:fixed;top:16px;right:16px;background:#E24B4A;color:#fff;border:none;border-radius:6px;padding:7px 16px;font:12px monospace;cursor:pointer;z-index:20}
+#cancel-btn:hover{background:#c93a39}
 </style>
 </head>
 <body>
-<div id="hint">Cliquer + glisser pour sélectionner une zone &nbsp;·&nbsp; Échap pour annuler</div>
+<div id="hint">Cliquer + glisser pour selectionner une zone &nbsp;-&nbsp; Echap pour annuler</div>
 <div id="sel"></div>
 <div id="coords"></div>
-<button id="cancel">✕ Annuler</button>
-<script>
-const{invoke}=window.__TAURI__.core;
-const sel=document.getElementById('sel');
-const coords=document.getElementById('coords');
-let sx=0,sy=0,drag=false;
-function doCancel(){invoke('cancel_region_selection').catch(()=>{});window.close();}
-document.getElementById('cancel').addEventListener('click',doCancel);
-document.addEventListener('keydown',e=>{if(e.key==='Escape')doCancel();});
-document.addEventListener('mousedown',e=>{
-  if(e.target.id==='cancel')return;
-  e.preventDefault();sx=e.clientX;sy=e.clientY;drag=true;
-  sel.style.cssText='display:block;left:'+sx+'px;top:'+sy+'px;width:0;height:0';
-});
-document.addEventListener('mousemove',e=>{
-  if(!drag)return;
-  const x=Math.min(e.clientX,sx),y=Math.min(e.clientY,sy);
-  const w=Math.abs(e.clientX-sx),h=Math.abs(e.clientY-sy);
-  sel.style.left=x+'px';sel.style.top=y+'px';sel.style.width=w+'px';sel.style.height=h+'px';
-  coords.style.cssText='display:block;left:'+(e.clientX+14)+'px;top:'+(e.clientY+14)+'px';
-  coords.textContent=x+','+y+'  '+w+'x'+h;
-});
-document.addEventListener('mouseup',async e=>{
-  if(!drag)return;drag=false;coords.style.display='none';
-  const x=Math.min(e.clientX,sx),y=Math.min(e.clientY,sy);
-  const w=Math.abs(e.clientX-sx),h=Math.abs(e.clientY-sy);
-  if(w<4||h<4){doCancel();return;}
-  try{await invoke('submit_region_selection',{x,y,w,h});}
-  catch(err){console.error(err);doCancel();}
-});
-</script>
+<button id="cancel-btn">Annuler</button>
 </body>
 </html>

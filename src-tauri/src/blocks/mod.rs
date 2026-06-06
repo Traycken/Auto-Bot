@@ -116,6 +116,7 @@ pub enum Block {
     DictFind(DictFindBlock),
     DictRemove(DictRemoveBlock),
     Cmd(CmdBlock),
+    Python(PythonBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,9 +337,29 @@ pub struct CmdBlock {
     #[serde(default)] pub command: String,
     #[serde(default = "default_cmd_return")] pub output_var: String,
     #[serde(default = "default_wait_true")] pub wait: bool,
+    #[serde(default)] pub administrator: bool,
+    #[serde(default)] pub echo: bool,
 }
 
 fn default_wait_true() -> bool { true }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonGlobal {
+    #[serde(default)] pub name: String,
+    #[serde(default)] pub value: String,
+}
+
+fn default_python_version() -> String { "3.12".into() }
+fn default_python_output() -> String { "PythonReturn".into() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonBlock {
+    #[serde(default)] pub script: String,
+    #[serde(default)] pub requirements: String,
+    #[serde(default = "default_python_version")] pub python_version: String,
+    #[serde(default)] pub globals: Vec<PythonGlobal>,
+    #[serde(default = "default_python_output")] pub output_var: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RandomBlock {

@@ -249,7 +249,15 @@ pub fn get_cursor_pos_now() -> Result<CursorPos,String> {
 // ── Region selection IPC ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn submit_region_selection(handle:tauri::AppHandle, x:i32, y:i32, w:u32, h:u32) -> Result<(),String> {
+pub async fn submit_region_selection(
+    handle:tauri::AppHandle,
+    x:i32,
+    y:i32,
+    w:u32,
+    h:u32,
+    origin_x: Option<i32>,
+    origin_y: Option<i32>,
+) -> Result<(),String> {
     use crate::overlay::{OverlayResult, SelectedRegion};
     
     let mut abs_x = x;
@@ -257,14 +265,22 @@ pub async fn submit_region_selection(handle:tauri::AppHandle, x:i32, y:i32, w:u3
     let mut abs_w = w;
     let mut abs_h = h;
 
-    if let Some(win) = handle.get_webview_window("region-selector") {
+    if let (Some(ox), Some(oy)) = (origin_x, origin_y) {
+        abs_x = ox;
+        abs_y = oy;
+        if let Some(win) = handle.get_webview_window("region-selector") {
+            let sf = win.scale_factor().unwrap_or(1.0);
+            abs_w = (w as f64 * sf).round() as u32;
+            abs_h = (h as f64 * sf).round() as u32;
+        }
+    } else if let Some(win) = handle.get_webview_window("region-selector") {
         let sf = win.scale_factor().unwrap_or(1.0);
         let px = (x as f64 * sf).round() as i32;
         let py = (y as f64 * sf).round() as i32;
         let pw = (w as f64 * sf).round() as u32;
         let ph = (h as f64 * sf).round() as u32;
         
-        if let Ok(pos) = win.outer_position() {
+        if let Ok(pos) = win.inner_position() {
             abs_x = pos.x + px;
             abs_y = pos.y + py;
             abs_w = pw;
@@ -286,6 +302,16 @@ pub async fn cancel_region_selection(handle:tauri::AppHandle) -> Result<(),Strin
 #[tauri::command]
 pub async fn select_screen_region(handle:tauri::AppHandle, screen:Option<i32>) -> Result<crate::overlay::SelectedRegion,String> {
     crate::overlay::select_region(&handle, screen.unwrap_or(0)).await
+}
+
+#[tauri::command]
+pub async fn request_cmd_admin_access(handle: tauri::AppHandle) -> Result<(), String> {
+    crate::engine::restart_app_as_admin(&handle)
+}
+
+#[tauri::command]
+pub async fn is_app_elevated() -> Result<bool, String> {
+    Ok(crate::engine::is_process_elevated())
 }
 
 // ── Application settings & Tesseract detection ────────────────────────────────
