@@ -1,0 +1,39 @@
+[package]
+name    = "auto-bot"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.tauri]
+
+[lib]
+name = "auto_bot_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "auto-bot"
+path = "src/main.rs"
+
+[dependencies]
+tauri              = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs    = "2"
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+tokio              = { version = "1", features = ["full"] }
+tokio-util         = "0.7"
+anyhow             = "1"
+enigo              = "0.3"
+xcap               = "0.0.12"
+image              = "0.25"
+base64             = "0.22"
+log                = "0.4"
+env_logger         = "0.11"
+async-recursion    = "1"
+rand               = { version = "0.8", features = ["small_rng"] }
+url                = "2"
+regex              = "1"
+chrono             = { version = "0.4", features = ["serde"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

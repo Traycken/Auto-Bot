@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Auto Bot capabilities",
+  "windows": ["main", "region-selector"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-open",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-write-file",
+    "fs:allow-read-file",
+    "fs:allow-read-dir",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-app-write",
+    "fs:allow-app-read"
+  ]
+}

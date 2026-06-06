@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.35);
+    cursor: crosshair;
+    user-select: none;
+    overflow: hidden;
+  }
+  #hint {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.75); color: #fff; padding: 8px 18px;
+    border-radius: 8px; font-family: monospace; font-size: 13px;
+    pointer-events: none; border: 1px solid #444;
+  }
+  #selection {
+    position: fixed; display: none;
+    border: 2px solid #E84C1E;
+    background: rgba(232,76,30,0.1);
+    pointer-events: none;
+  }
+  #coords {
+    position: fixed; background: rgba(0,0,0,0.8); color: #E84C1E;
+    font-family: monospace; font-size: 11px; padding: 3px 8px;
+    border-radius: 4px; pointer-events: none; display: none;
+  }
+  #cancel {
+    position: fixed; top: 20px; right: 20px;
+    background: rgba(226,75,74,0.85); color: #fff;
+    border: none; border-radius: 6px; padding: 6px 14px;
+    font-family: monospace; font-size: 12px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="hint">Cliquez et glissez pour sélectionner une zone · Échap pour annuler</div>
+<div id="selection"></div>
+<div id="coords"></div>
+<button id="cancel" onclick="cancel()">✕ Annuler</button>
+
+<script>
+const { invoke } = window.__TAURI__.core;
+const sel = document.getElementById('selection');
+const coords = document.getElementById('coords');
+
+let startX = 0, startY = 0, dragging = false;
+
+function cancel() {
+  invoke('cancel_region_selection').catch(() => {});
+  window.close();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') cancel();
+});
+
+document.addEventListener('mousedown', e => {
+  if (e.target.id === 'cancel') return;
+  startX = e.clientX; startY = e.clientY; dragging = true;
+  sel.style.display = 'block';
+  sel.style.left = startX + 'px'; sel.style.top = startY + 'px';
+  sel.style.width = '0'; sel.style.height = '0';
+});
+
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const x = Math.min(e.clientX, startX);
+  const y = Math.min(e.clientY, startY);
+  const w = Math.abs(e.clientX - startX);
+  const h = Math.abs(e.clientY - startY);
+  sel.style.left = x + 'px'; sel.style.top = y + 'px';
+  sel.style.width = w + 'px'; sel.style.height = h + 'px';
+
+  coords.style.display = 'block';
+  coords.style.left = (e.clientX + 12) + 'px';
+  coords.style.top  = (e.clientY + 12) + 'px';
+  coords.textContent = `${x},${y}  ${w}×${h}`;
+});
+
+document.addEventListener('mouseup', async e => {
+  if (!dragging) return;
+  dragging = false;
+  coords.style.display = 'none';
+
+  const x = Math.min(e.clientX, startX);
+  const y = Math.min(e.clientY, startY);
+  const w = Math.abs(e.clientX - startX);
+  const h = Math.abs(e.clientY - startY);
+
+  if (w < 5 || h < 5) { cancel(); return; }
+
+  try {
+    await invoke('submit_region_selection', { x, y, w, h });
+  } catch(err) {
+    console.error('submit_region_selection error:', err);
+  }
+});
+</script>
+</body>
+</html>
