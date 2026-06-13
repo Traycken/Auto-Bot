@@ -34,7 +34,9 @@ rand               = { version = "0.8", features = ["small_rng"] }
 url                = "2"
 regex              = "1"
 chrono             = { version = "0.4", features = ["serde"] }
-windows-sys        = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys        = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Power"] }
+reqwest            = { version = "0.12", features = ["json"] }
+ort                = "2.0.0-rc.9"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

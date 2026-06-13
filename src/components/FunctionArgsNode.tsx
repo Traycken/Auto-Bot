@@ -1,13 +1,15 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
+import { useNodeWidth } from "../store/editorStore";
+
 interface ArgDef { name: string; type: string; }
 interface FunctionArgsData { args: (string | ArgDef)[]; [key: string]: unknown; }
 
-const NODE_W = 200;
 const C = "#22C55E";
 
 export const FunctionArgsNode = memo(function FunctionArgsNode({ data, selected }: NodeProps) {
+  const NODE_W = useNodeWidth();
   const d = data as FunctionArgsData;
   const args = d.args ?? [];
 
@@ -27,7 +29,22 @@ export const FunctionArgsNode = memo(function FunctionArgsNode({ data, selected 
           <i className="ti ti-input-check" style={{ fontSize:11, color:"#fff" }} />
         </div>
         <span style={{ fontWeight:600, color:C, fontSize:11, letterSpacing:"0.06em" }}>ARGUMENTS</span>
-        <span style={{ marginLeft:"auto", fontSize:9, color:`${C}99`, background:`${C}18`, padding:"1px 6px", borderRadius:4 }}>entrée</span>
+        <span style={{ marginLeft:"auto", fontSize:9, color:`${C}99`, background:`${C}18`, padding:"1px 6px", borderRadius:4, marginRight:4 }}>entrée</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "function_args" } }));
+          }}
+          title="Aide sur ce bloc"
+          style={{
+            width:16, height:16, borderRadius:4, background:"transparent",
+            border:"0.5px solid #2a4a30", cursor:"pointer", display:"flex",
+            alignItems:"center", justifyContent:"center", padding:0, flexShrink:0,
+            color:"#555", fontSize:9, lineHeight:1, fontFamily:"monospace",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#555")}
+        >?</button>
       </div>
 
       {/* Args list */}

@@ -117,6 +117,57 @@ pub enum Block {
     DictRemove(DictRemoveBlock),
     Cmd(CmdBlock),
     Python(PythonBlock),
+    Iterations(IterationsBlock),
+    #[serde(rename = "for_each", alias = "foreach")]
+    ForEach(ForEachBlock),
+    Switch(SwitchBlock),
+    Console(ConsoleBlock),
+    Ia(IaBlock),
+    Vpo(VpoBlock),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IterationsBlock {
+    #[serde(default="default_str_10")] pub count: String,
+    #[serde(default)] pub infinite: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForEachBlock {
+    #[serde(default)] pub collection_var: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwitchBlock {
+    #[serde(default)] pub expression: String,
+    #[serde(default)] pub cases: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsoleBlock {
+    #[serde(default)] pub text: String,
+}
+
+fn default_ia_mode() -> String { "text".into() }
+fn default_ia_api() -> String { "external".into() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IaBlock {
+    #[serde(default = "default_ia_mode")] pub mode: String, // "text" | "image"
+    #[serde(default)] pub prompt: String,
+    #[serde(default = "default_ia_api")] pub api_mode: String, // "local" | "external"
+    #[serde(default)] pub api_key: String,
+    #[serde(default)] pub model_name: String,
+    #[serde(default)] pub output_var: String,
+}
+
+fn default_vpo_threshold() -> String { "0.5".into() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VpoBlock {
+    #[serde(default)] pub class_name: String,
+    #[serde(default = "default_vpo_threshold")] pub threshold: String,
+    #[serde(default)] pub output_var: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,6 +305,7 @@ pub struct ForLoopBlock {
     #[serde(default="default_str_0")]   pub from: String,
     #[serde(default="default_str_10")]  pub to: String,
     #[serde(default="default_str_1")]   pub step: String,
+    #[serde(default)]                   pub infinite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -352,6 +404,8 @@ pub struct PythonGlobal {
 fn default_python_version() -> String { "3.12".into() }
 fn default_python_output() -> String { "PythonReturn".into() }
 
+fn default_interpreter_mode() -> String { "uv".into() }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PythonBlock {
     #[serde(default)] pub script: String,
@@ -359,6 +413,11 @@ pub struct PythonBlock {
     #[serde(default = "default_python_version")] pub python_version: String,
     #[serde(default)] pub globals: Vec<PythonGlobal>,
     #[serde(default = "default_python_output")] pub output_var: String,
+    #[serde(default = "default_interpreter_mode")] pub interpreter_mode: String, // "uv" | "manual"
+    #[serde(default)] pub python_path: String,
+    #[serde(default)] pub pip_path: String,
+    #[serde(default)] pub python_env_dir: String,
+    #[serde(default)] pub python_env_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -430,6 +489,7 @@ pub struct FunctionCallBlock {
 
 // ── Expression evaluator ──────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub fn eval_expr(expr: &str, vars: &HashMap<String, String>) -> f64 {
     let resolved = expr
         .replace("%%", "\x00")
@@ -455,28 +515,12 @@ pub fn eval_expr(expr: &str, vars: &HashMap<String, String>) -> f64 {
 }
 
 pub fn interpolate_text(text: &str, vars: &HashMap<String, String>) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            match chars.peek() {
-                Some('%') => { chars.next(); result.push('%'); }
-                Some(c) if c.is_alphanumeric() || *c == '_' => {
-                    let mut name = String::new();
-                    while let Some(&nc) = chars.peek() {
-                        if nc.is_alphanumeric() || nc == '_' { name.push(nc); chars.next(); } else { break; }
-                    }
-                    result.push_str(vars.get(&name).map(|s| s.as_str()).unwrap_or(""));
-                }
-                _ => result.push('%'),
-            }
-        } else { result.push(ch); }
-    }
-    result
+    crate::engine::resolve_expressions_in_text(text, vars)
 }
 
 // ── Tiny recursive-descent evaluator ─────────────────────────────────────────
 
+#[allow(dead_code)]
 pub fn tiny_eval(expr: &str) -> Option<f64> {
     let b = expr.as_bytes();
     let (v, pos) = parse_add(b, 0)?;

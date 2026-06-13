@@ -1,0 +1,30 @@
+{
+  "_metadata": {
+    "comment": "This block is an AI translation prompt guide for future automated translations.",
+    "instructions": "When translating keys from this file to other languages, preserve the keys exactly. Translate the values to the target language naturally, maintaining technical context of a GUI automation editor (Tauri, React, Rust, React Flow). For terms like 'BBOX', 'OCR', 'YOLO', keep them or adapt to standard local technical terms."
+  },
+  "app.title": "Auto-Bot Automation Editor",
+  "menu.save": "Save",
+  "menu.open": "Open",
+  "menu.run": "Run",
+  "menu.stop": "Stop",
+  "node.start": "Start",
+  "node.wait": "Wait",
+  "node.keypress": "Key Press",
+  "node.mousemove": "Mouse Move",
+  "node.mouseclick": "Mouse Click",
+  "node.mousescroll": "Mouse Scroll",
+  "node.pixelcolor": "Pixel Color",
+  "node.imagematch": "Image Match",
+  "node.ocr": "OCR",
+  "node.cmd": "Command line (CMD)",
+  "node.python": "Python",
+  "node.for": "For Loop",
+  "node.if": "If",
+  "node.switch": "Switch",
+  "node.iterations": "Iterations",
+  "node.foreach": "ForEach",
+  "node.console": "Console Log",
+  "node.ia": "AI Inference",
+  "node.vpo": "YOLO / Computer Vision"
+}

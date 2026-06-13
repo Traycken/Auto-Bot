@@ -15,23 +15,8 @@ async function pickScreenRegion(screenIdx: number) {
 }
 
 const BLACKLIST = new Set([
-  "label","color","icon","kind","children",
-  "expected_hex","expected_r","expected_g","expected_b",
-  "expected_h","expected_s","expected_v","template_b64",
-  "x","y","condition","from","to","step","var_name",
-  "region_x","region_y","region_w","region_h",
-  "color_format","tolerance","output_var","threshold",
-  "iterations","cooldown_ms","delta_x","delta_y",
-  "text","value","name","times","interval_ms","duration_ms",
-  "width","height","target_var","expression",
-  "mode","min","max","use_seed","seed","list_items",
-  "args","return_var","function_name","call_args","screen",
-  "array_var","array_vars","dict_var","dict_vars",
-  "position","unique","pairs","key","values",
-  "match_text","match_case","match_whole_word","use_regex",
-  "year","month","day","hour","minute","second",
-  "match_mode","command","wait","administrator","echo",
-  "script","requirements","python_version","globals",
+  "label", "color", "icon", "kind", "children", "index", "id", "type", "position", "deletable",
+  "Relative", "double click", "LANG", "hold ms", "delay between chars ms", "delay after ms", "travel ms", "Travel MS"
 ]);
 
 const S = {
@@ -63,6 +48,7 @@ function InspectorTabs({ value, onChange }: { value:"normal"|"advanced"; onChang
 function AdvancedFields({ data, onChange }: { data:Record<string,unknown>; onChange:(p:Record<string,unknown>)=>void }) {
   const fields = Object.entries(data).filter(([k,v]) =>
     !["label","color","icon","kind","children"].includes(k) &&
+    !BLACKLIST.has(k) &&
     (typeof v==="string" || typeof v==="number" || typeof v==="boolean")
   );
   return (
@@ -217,8 +203,8 @@ function ColorField({ data, onChange }: { data:Record<string,unknown>; onChange:
         <div style={{ display:"flex", gap:4 }}>
           {[["expected_r","R","#E24B4A"],["expected_g","G","#1D9E75"],["expected_b","B","#378ADD"]].map(([k,lbl,col]) => (
             <div key={k} style={{ flex:1 }}>
-              <span style={{ ...S.label, color:col }}>{lbl}</span>
-              <input type="number" min={0} max={255} value={(data[k] as number)??0} onChange={e => onChange({[k]:Number(e.target.value)})} style={S.input} />
+              <span style={{ ...S.label, color:col }}>{lbl} ({(data[k] as number)??0})</span>
+              <input type="range" min={0} max={255} step={1} value={(data[k] as number)??0} onChange={e => onChange({[k]:Number(e.target.value)})} style={{ width:"100%", accentColor:col }} />
             </div>
           ))}
         </div>
@@ -227,8 +213,8 @@ function ColorField({ data, onChange }: { data:Record<string,unknown>; onChange:
         <div style={{ display:"flex", gap:4 }}>
           {[["expected_h","H°","0","360"],["expected_s","S%","0","100"],["expected_v","V%","0","100"]].map(([k,lbl,mn,mx]) => (
             <div key={k} style={{ flex:1 }}>
-              <span style={S.label}>{lbl}</span>
-              <input type="number" min={Number(mn)} max={Number(mx)} value={(data[k] as number)??0} onChange={e => onChange({[k]:Number(e.target.value)})} style={S.input} />
+              <span style={S.label}>{lbl} ({(data[k] as number)??0})</span>
+              <input type="range" min={Number(mn)} max={Number(mx)} step={1} value={(data[k] as number)??0} onChange={e => onChange({[k]:Number(e.target.value)})} style={{ width:"100%", accentColor:"#1D9E75" }} />
             </div>
           ))}
         </div>
@@ -396,6 +382,29 @@ function OcrFields({ data, onChange }: { data:Record<string,unknown>; onChange:(
       <SmartInput label="Var. de sortie (texte OCR)" value={(data.output_var as string)??"ocrText"} onChange={v => onChange({ output_var:v })} />
 
       <ScreenPickerButton screen={Number(data.screen??0)} onSelect={s => onChange({ screen:s })} />
+      <div style={{ marginTop: 10, display: "flex", gap: 5, alignItems: "center" }}>
+        <button
+          onClick={async () => {
+            try {
+              const res = await invoke<boolean>("test_ocr", {
+                x: Number(data.x ?? 0),
+                y: Number(data.y ?? 0),
+                w: Number(data.width ?? 300),
+                h: Number(data.height ?? 100),
+                screen: Number(data.screen ?? 0),
+                lang: String(data.lang ?? "fra"),
+                matchText: String(data.match_text ?? "")
+              });
+              alert(res ? "Succès : Texte OCR matché !" : "Échec : Texte non trouvé dans la capture OCR.");
+            } catch (e) {
+              alert("Erreur de test: " + String(e));
+            }
+          }}
+          style={{ ...S.btn, flex: 1, background: "#1D9E7522", borderColor: "#1D9E75", color: "#1D9E75", fontWeight: "bold" }}
+        >
+          <i className="ti ti-test-pipe" style={{ fontSize: 11 }} /> TESTER OCR
+        </button>
+      </div>
     </>
   );
 }
@@ -471,6 +480,29 @@ function ImageFields({ data, onChange }: { data:Record<string,unknown>; onChange
       </div>
       <SmartInput label="Var. de sortie (BOX dict)" value={(data.output_var  as string)??"imgMatch"} onChange={v => onChange({ output_var:v })} />
       <ScreenPickerButton screen={Number(data.screen??0)} onSelect={s => onChange({ screen:s })} />
+      <div style={{ marginTop: 10, display: "flex", gap: 5, alignItems: "center" }}>
+        <button
+          onClick={async () => {
+            try {
+              const res = await invoke<boolean>("test_image_match", {
+                templateB64: data.template_b64 ?? "",
+                x: Number(data.region_x ?? 0),
+                y: Number(data.region_y ?? 0),
+                w: Number(data.region_w ?? 400),
+                h: Number(data.region_h ?? 300),
+                screen: Number(data.screen ?? 0),
+                threshold: String(data.threshold ?? "0.9")
+              });
+              alert(res ? "Succès : Image trouvée !" : "Échec : Image non trouvée.");
+            } catch (e) {
+              alert("Erreur de test: " + String(e));
+            }
+          }}
+          style={{ ...S.btn, flex: 1, background: "#1D9E7522", borderColor: "#1D9E75", color: "#1D9E75", fontWeight: "bold" }}
+        >
+          <i className="ti ti-test-pipe" style={{ fontSize: 11 }} /> TESTER IMAGE
+        </button>
+      </div>
     </>
   );
 }
@@ -567,7 +599,55 @@ function CmdFields({ data, onChange, nodeId }: { data:Record<string,unknown>; on
 
 function PythonFields({ data, onChange, nodeId }: { data:Record<string,unknown>; onChange:(p:Record<string,unknown>)=>void; nodeId:string }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [pythonEnvs, setPythonEnvs] = useState<Array<{ name: string; dir: string }>>([]);
+  
+  const interpreterMode = (data.interpreter_mode as string) ?? "uv";
   const globals = (data.globals as { name:string; value:string }[] | undefined) ?? [];
+
+  const [manualSubMode, setManualSubMode] = useState<"normal" | "advanced">(
+    (data.python_path || data.pip_path) ? "advanced" : "normal"
+  );
+
+  useEffect(() => {
+    invoke<{ python_envs?: Array<{ name: string; dir: string }> }>("get_settings")
+      .then(settings => {
+        setPythonEnvs(settings.python_envs || []);
+      })
+      .catch(err => console.error("Error loading settings in PythonFields:", err));
+  }, []);
+
+  const handleBrowseEnvDir = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const path = await open({
+        title: "Choisir le dossier de l'environnement Python",
+        multiple: false,
+        directory: true,
+      });
+      if (path && typeof path === "string") {
+        onChange({ python_env_dir: path });
+      }
+    } catch (err) {
+      console.error("Browse directory error:", err);
+    }
+  };
+
+  const handleBrowseFile = async (field: "python_path" | "pip_path") => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const path = await open({
+        title: `Choisir le fichier ${field === "python_path" ? "python" : "pip"}`,
+        multiple: false,
+        directory: false,
+      });
+      if (path && typeof path === "string") {
+        onChange({ [field]: path });
+      }
+    } catch (err) {
+      console.error("Browse file error:", err);
+    }
+  };
+
   const updateGlobal = (index:number, key:"name"|"value", value:string) => {
     const next = [...globals];
     next[index] = { ...next[index], [key]: value };
@@ -576,18 +656,134 @@ function PythonFields({ data, onChange, nodeId }: { data:Record<string,unknown>;
   const addGlobal = () => onChange({ globals: [...globals, { name:`var_${globals.length + 1}`, value:"" }] });
   const removeGlobal = (index:number) => onChange({ globals: globals.filter((_, i) => i !== index) });
 
+  const selectedEnvName = (data.python_env_name as string) ?? "";
+  const selectedEnvDir = (data.python_env_dir as string) ?? "";
+
   return (
     <>
       <div style={S.row}>
-        <span style={S.label}>Version Python UV</span>
-        <input
-          type="text"
-          value={(data.python_version as string)??"3.12"}
-          onChange={e => onChange({ python_version:e.target.value })}
-          style={S.input}
-          placeholder="3.12, 3.11, >=3.10"
-        />
+        <span style={S.label}>Sélecteur d'interprète</span>
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          {([["uv", "Mode UV Auto"], ["manual", "Mode Manuel"]] as const).map(([m, lbl]) => (
+            <button key={m} onClick={() => onChange({ interpreter_mode: m })} style={{
+              ...S.btn, flex: 1,
+              background: interpreterMode === m ? "#3776AB22" : "#111113",
+              borderColor: interpreterMode === m ? "#3776AB" : "#2a2a2e",
+              color: interpreterMode === m ? "#3776AB" : "#666",
+            }}>{lbl}</button>
+          ))}
+        </div>
       </div>
+
+      {interpreterMode === "manual" ? (
+        <>
+          <div style={S.row}>
+            <span style={S.label}>Sous-mode Manuel</span>
+            <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+              {([["normal", "Normal (Dossier)"], ["advanced", "Avancé (Chemins)"]] as const).map(([sm, lbl]) => (
+                <button key={sm} onClick={() => {
+                  setManualSubMode(sm);
+                  if (sm === "normal") {
+                    onChange({ python_path: "", pip_path: "" });
+                  } else {
+                    onChange({ python_env_name: "", python_env_dir: "" });
+                  }
+                }} style={{
+                  ...S.btn, flex: 1, fontSize: 11, padding: "4px 8px",
+                  background: manualSubMode === sm ? "#3776AB22" : "#111113",
+                  borderColor: manualSubMode === sm ? "#3776AB" : "#2a2a2e",
+                  color: manualSubMode === sm ? "#3776AB" : "#666",
+                }}>{lbl}</button>
+              ))}
+            </div>
+          </div>
+
+          {manualSubMode === "normal" ? (
+            <>
+              <div style={S.row}>
+                <span style={S.label}>Environnement Python</span>
+                <select
+                  value={selectedEnvName || "__custom__"}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === "__custom__") {
+                      onChange({ python_env_name: "", python_env_dir: "" });
+                    } else {
+                      const matched = pythonEnvs.find(env => env.name === val);
+                      onChange({ python_env_name: val, python_env_dir: matched ? matched.dir : "" });
+                    }
+                  }}
+                  style={{ ...S.input, padding: "8px" }}
+                >
+                  <option value="__custom__">-- Dossier personnalisé --</option>
+                  {pythonEnvs.map(env => (
+                    <option key={env.name} value={env.name}>{env.name} ({env.dir})</option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedEnvName !== "" ? (
+                <div style={S.row}>
+                  <span style={S.label}>Dossier de l'environnement</span>
+                  <input type="text" value={selectedEnvDir} disabled style={{ ...S.input, opacity: 0.6 }} />
+                </div>
+              ) : (
+                <div style={S.row}>
+                  <span style={S.label}>Dossier de l'environnement</span>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <input
+                      type="text"
+                      value={selectedEnvDir}
+                      onChange={e => onChange({ python_env_dir: e.target.value })}
+                      style={{ ...S.input, flex: 1 }}
+                      placeholder="Ex: C:\mon_env_python"
+                    />
+                    <button onClick={handleBrowseEnvDir} style={S.btn} title="Choisir le dossier...">
+                      📂
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={S.row}>
+                <span style={S.label}>Chemin python.exe</span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <input type="text" value={(data.python_path as string) ?? ""} onChange={e => onChange({ python_path: e.target.value })} style={{ ...S.input, flex: 1 }} placeholder="C:\chemin\vers\python.exe" />
+                  <button onClick={() => handleBrowseFile("python_path")} style={S.btn} title="Choisir le fichier...">
+                    📂
+                  </button>
+                </div>
+              </div>
+              <div style={S.row}>
+                <span style={S.label}>Chemin pip.exe (facultatif)</span>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <input type="text" value={(data.pip_path as string) ?? ""} onChange={e => onChange({ pip_path: e.target.value })} style={{ ...S.input, flex: 1 }} placeholder="C:\chemin\vers\pip.exe" />
+                  <button onClick={() => handleBrowseFile("pip_path")} style={S.btn} title="Choisir le fichier...">
+                    📂
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <div style={S.row}>
+          <span style={S.label}>Version Python UV</span>
+          <select
+            value={(data.python_version as string) ?? "3.12"}
+            onChange={e => onChange({ python_version: e.target.value })}
+            style={{ ...S.input, background: "#0e0e10" }}
+          >
+            <option value="3.12">3.12 (Recommandé)</option>
+            <option value="3.11">3.11</option>
+            <option value="3.10">3.10</option>
+            <option value="3.9">3.9</option>
+            <option value="3.8">3.8</option>
+          </select>
+        </div>
+      )}
       <div style={S.row}>
         <span style={S.label}>Requirements</span>
         <textarea
@@ -1005,8 +1201,10 @@ export function Inspector() {
   // Blocs qui ont un champ écran
   const hasScreen = ["mouse_move","mouse_click","mouse_scroll","pixel_color","ocr","image_match"].includes(kind);
 
+  const defaultKeys = meta?.defaultData ? Object.keys(meta.defaultData) : [];
+
   const genericFields = Object.entries(data)
-    .filter(([k,v]) => !BLACKLIST.has(k) && typeof v !== "object" && !Array.isArray(v));
+    .filter(([k,v]) => !BLACKLIST.has(k) && !defaultKeys.includes(k) && typeof v !== "object" && !Array.isArray(v));
 
   return (
     <aside style={base}>
@@ -1029,6 +1227,18 @@ export function Inspector() {
           <AdvancedFields data={data} onChange={patch} />
         ) : (
           <>
+            {/* Alias custom setting */}
+            <div style={S.row}>
+              <span style={S.label}>Surnom (Alias)</span>
+              <input
+                type="text"
+                value={(data.alias as string) ?? ""}
+                onChange={e => patch({ alias: e.target.value })}
+                placeholder="Ex: Looper"
+                style={S.input}
+              />
+            </div>
+
             {/* ── Départ ── */}
             {kind==="start" && (
               <p style={{ fontSize:11, color:"#555", textAlign:"center", marginTop:20 }}>
@@ -1086,6 +1296,7 @@ export function Inspector() {
                   </div>
                 </div>
                 <BoolField label="Double-clic" value={!!data.double_click} onChange={v => patch({ double_click:v })} />
+                <SmartInput label="Durée déplacement (ms)" value={(data.travel_ms as string)??"100"} onChange={v => patch({ travel_ms:v })} />
                 <SmartInput label="Délai après (ms)" value={(data.delay_after_ms as string)??"0"} onChange={v => patch({ delay_after_ms:v })} />
               </>
             )}
@@ -1103,6 +1314,7 @@ export function Inspector() {
               <>
                 <SmartInput label="Delta X" value={(data.delta_x as string)??"0"} onChange={v => patch({ delta_x:v })} />
                 <SmartInput label="Delta Y" value={(data.delta_y as string)??"3"} onChange={v => patch({ delta_y:v })} />
+                <SmartInput label="Durée déplacement (ms)" value={(data.travel_ms as string)??"0"} onChange={v => patch({ travel_ms:v })} />
               </>
             )}
 
@@ -1145,8 +1357,20 @@ export function Inspector() {
                   <input type="text" value={(data.var_name as string)??"i"} onChange={e => patch({ var_name:e.target.value })} style={S.input} />
                 </div>
                 <SmartInput label="De"  value={(data.from as string)??"0"}  onChange={v => patch({ from:v })} />
-                <SmartInput label="À"   value={(data.to   as string)??"10"} onChange={v => patch({ to:v })} />
+                <SmartInput
+                  label="À"
+                  value={data.infinite ? "∞" : ((data.to as string) ?? "10")}
+                  onChange={v => patch({ to: v })}
+                  disabled={!!data.infinite}
+                />
                 <SmartInput label="Pas" value={(data.step as string)??"1"}  onChange={v => patch({ step:v })} />
+                <BoolField label="Mode Infini (∞)" value={!!data.infinite} onChange={v => {
+                  if (v) {
+                    patch({ infinite: v, to: "∞" });
+                  } else {
+                    patch({ infinite: v, to: "10" });
+                  }
+                }} />
                 <div style={{ padding:"5px 8px", background:"#111113", borderRadius:5, border:"0.5px solid #2a2a2e", fontSize:9, color:"#555" }}>
                   <span style={{ color:"#7F77DD" }}>▶ corps</span> → blocs dans la boucle<br/>
                   <span style={{ color:"#7F77DD" }}>↩ retour</span> → fin d'itération<br/>
@@ -1262,14 +1486,38 @@ export function Inspector() {
                   {picking ? "Sélectionnez sur l'écran..." : "Pipette (Pos + Couleur)"}
                 </button>
                 <ColorField data={data} onChange={patch} />
-                <div style={S.row}>
-                  <span style={S.label}>Tolérance (0–255)</span>
-                  <input type="number" min={0} max={255} value={(data.tolerance as number)??10} onChange={e => patch({ tolerance:Number(e.target.value) })} style={S.input} />
+                 <div style={S.row}>
+                  <span style={S.label}>Tolérance ({(data.tolerance as number)??10})</span>
+                  <input type="range" min={0} max={255} step={1} value={(data.tolerance as number)??10} onChange={e => patch({ tolerance:Number(e.target.value) })} style={{ width:"100%", accentColor:"#1D9E75" }} />
                 </div>
                 <SmartInput label="Itérations"     value={(data.iterations  as string)??"1"}   onChange={v => patch({ iterations:v })} />
                 <SmartInput label="Cool-down (ms)" value={(data.cooldown_ms as string)??"250"} onChange={v => patch({ cooldown_ms:v })} />
                 <SmartInput label="Var. de sortie" value={(data.output_var as string)??"pixelMatch"} onChange={v => patch({ output_var:v })} />
                 <ScreenPickerButton screen={Number(data.screen??0)} onSelect={s => patch({ screen:s })} />
+                <div style={{ marginTop: 10, display: "flex", gap: 5, alignItems: "center" }}>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const expectedHex = data.color_format === "rgb"
+                          ? `#${((data.expected_r as number ?? 255) << 16 | (data.expected_g as number ?? 0) << 8 | (data.expected_b as number ?? 0)).toString(16).padStart(6, "0")}`
+                          : String(data.expected_hex ?? "#FF0000");
+                        const res = await invoke<boolean>("test_pixel_color", {
+                          x: Number(data.x ?? 0),
+                          y: Number(data.y ?? 0),
+                          screen: Number(data.screen ?? 0),
+                          expectedHex,
+                          tolerance: Number(data.tolerance ?? 10)
+                        });
+                        alert(res ? "Succès : La couleur correspond !" : "Échec : La couleur ne correspond pas.");
+                      } catch (e) {
+                        alert("Erreur de test: " + String(e));
+                      }
+                    }}
+                    style={{ ...S.btn, flex: 1, background: "#1D9E7522", borderColor: "#1D9E75", color: "#1D9E75", fontWeight: "bold" }}
+                  >
+                    <i className="ti ti-test-pipe" style={{ fontSize: 11 }} /> TESTER PIXEL
+                  </button>
+                </div>
               </>
             )}
 
@@ -1451,6 +1699,187 @@ export function Inspector() {
                 <SmartInput label="Clé à supprimer" value={(data.key as string)??""} onChange={v => patch({ key:v })} />
               </>
             )}
+
+            {kind==="iterations" && (
+              <>
+                <SmartInput
+                  label="Nombre d'itérations"
+                  value={data.infinite ? "∞" : ((data.count as string) ?? "10")}
+                  onChange={v => patch({ count: v })}
+                  disabled={!!data.infinite}
+                />
+                <BoolField label="Mode Infini (∞)" value={!!data.infinite} onChange={v => {
+                  if (v) {
+                    patch({ infinite: v, count: "∞" });
+                  } else {
+                    patch({ infinite: v, count: "10" });
+                  }
+                }} />
+                <div style={{ padding:"5px 8px", background:"#111113", borderRadius:5, border:"0.5px solid #2a2a2e", fontSize:9, color:"#555" }}>
+                  <span style={{ color:"#7F77DD" }}>▶ corps</span> → blocs dans la boucle
+                </div>
+              </>
+            )}
+
+            {kind==="foreach" && (
+              <>
+                <div style={S.row}>
+                  <span style={S.label}>Nom de la collection (ARRAY / DICT / STRING)</span>
+                  <input type="text" value={(data.collection_var as string)??"myArray"} onChange={e => patch({ collection_var:e.target.value })} style={S.input} />
+                </div>
+                <div style={{ padding:"5px 8px", background:"#111113", borderRadius:5, border:"0.5px solid #2a2a2e", fontSize:9, color:"#555", lineHeight:1.6 }}>
+                  <span style={{ color:"#7F77DD" }}>▶ corps</span> → blocs dans la boucle<br/>
+                  Variables disponibles :<br/>
+                  • Array/String : <span style={{ color:"#c792ea" }}>%x</span> (valeur), <span style={{ color:"#c792ea" }}>%foreachindex</span><br/>
+                  • Dict : <span style={{ color:"#c792ea" }}>%key</span>, <span style={{ color:"#c792ea" }}>%value</span>, <span style={{ color:"#c792ea" }}>%foreachindex</span>
+                </div>
+              </>
+            )}
+
+            {kind==="switch" && (() => {
+              const cases = (data.cases as string[]) ?? ["1", "2"];
+              const updateCase = (idx: number, val: string) => {
+                const newCases = [...cases];
+                newCases[idx] = val;
+                patch({ cases: newCases });
+              };
+              const addCase = () => {
+                patch({ cases: [...cases, `Option ${cases.length + 1}`] });
+              };
+              const removeCase = (idx: number) => {
+                if (cases.length <= 1) return;
+                patch({ cases: cases.filter((_, i) => i !== idx) });
+              };
+              return (
+                <>
+                  <SmartInput label="Expression à évaluer" value={(data.expression as string)??""} onChange={v => patch({ expression:v })} />
+                  <span style={S.label}>Cas d'évaluation (Conditions)</span>
+                  {cases.map((c, i) => (
+                    <div key={i} style={{ display: "flex", gap: 5, alignItems: "center", marginBottom: 6 }}>
+                      <input
+                        type="text"
+                        value={c}
+                        onChange={e => updateCase(i, e.target.value)}
+                        style={{ ...S.input, flex: 1 }}
+                        placeholder={`Cas #${i + 1}`}
+                      />
+                      {cases.length > 1 && (
+                        <button
+                          onClick={() => removeCase(i)}
+                          style={{ ...S.btn, padding: "4px 8px", color: "#E24B4A", borderColor: "#E24B4A33" }}
+                          title="Supprimer la condition"
+                        >
+                          <i className="ti ti-trash" style={{ fontSize: 9 }} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    onClick={addCase}
+                    style={{ ...S.btn, width: "100%", background: "#EF9F2722", borderColor: "#EF9F27", color: "#EF9F27", marginTop: 5, marginBottom: 10 }}
+                  >
+                    <i className="ti ti-plus" style={{ fontSize: 11 }} /> Ajouter Condition
+                  </button>
+                  <div style={{ padding:"5px 8px", background:"#111113", borderRadius:5, border:"0.5px solid #2a2a2e", fontSize:9, color:"#555" }}>
+                    Les ports de sorties correspondants seront créés sur la droite du nœud Switch.
+                  </div>
+                </>
+              );
+            })()}
+
+            {kind==="console" && (
+              <>
+                <SmartInput label="Texte à logguer (supporte %var)" value={(data.text as string)??""} onChange={v => patch({ text:v })} multiline />
+              </>
+            )}
+
+            {kind==="ia" && (
+              <>
+                <div style={S.row}>
+                  <span style={S.label}>Mode Inférence</span>
+                  <div style={{ display:"flex", gap:4, marginBottom:8 }}>
+                    {([["text","Texte (LLM)"],["image","Vision (VLM)"]] as const).map(([m,lbl]) => (
+                      <button key={m} onClick={() => patch({ mode:m })} style={{
+                        ...S.btn, flex:1,
+                        background: data.mode===m ? "#3B82F622" : "#111113",
+                        borderColor: data.mode===m ? "#3B82F6" : "#2a2a2e",
+                        color: data.mode===m ? "#3B82F6" : "#666",
+                      }}>{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+                <SmartInput label="Prompt / Consigne" value={(data.prompt as string)??""} onChange={v => patch({ prompt:v })} multiline />
+                <div style={S.row}>
+                  <span style={S.label}>Source Modèle</span>
+                  <div style={{ display:"flex", gap:4, marginBottom:8 }}>
+                    {([["external","API Externe"],["local","Inférence Locale"]] as const).map(([src,lbl]) => (
+                      <button key={src} onClick={() => patch({ api_mode:src })} style={{
+                        ...S.btn, flex:1,
+                        background: data.api_mode===src ? "#3B82F622" : "#111113",
+                        borderColor: data.api_mode===src ? "#3B82F6" : "#2a2a2e",
+                        color: data.api_mode===src ? "#3B82F6" : "#666",
+                      }}>{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+                {data.api_mode === "external" && (
+                  <div style={S.row}>
+                    <span style={S.label}>Clé API</span>
+                    <input type="password" value={(data.api_key as string)??""} onChange={e => patch({ api_key:e.target.value })} style={S.input} placeholder="sk-..." />
+                  </div>
+                )}
+                <div style={S.row}>
+                  <span style={S.label}>Nom du modèle</span>
+                  <input type="text" value={(data.model_name as string)??""} onChange={e => patch({ model_name:e.target.value })} style={S.input} placeholder="ex: gpt-4o, ollama/llama3" />
+                </div>
+                <SmartInput label="Variable de sortie" value={(data.output_var as string)??"response"} onChange={v => patch({ output_var:v })} />
+              </>
+            )}
+
+            {kind==="vpo" && (
+              <>
+                <div style={S.row}>
+                  <span style={S.label}>Classe à détecter (YOLO)</span>
+                  <input type="text" value={(data.class_name as string)??"person"} onChange={e => patch({ class_name:e.target.value })} style={S.input} placeholder="person, car, dog..." />
+                </div>
+                <div style={S.row}>
+                  <span style={S.label}>Seuil de confiance ({String(data.threshold??"0.5")})</span>
+                  <input type="range" min={0.1} max={1.0} step={0.05} value={Number(data.threshold??"0.5")} onChange={e => patch({ threshold:e.target.value })} style={{ width:"100%", accentColor:"#10B981" }} />
+                </div>
+                <SmartInput label="Variable de sortie" value={(data.output_var as string)??"vpoMatch"} onChange={v => patch({ output_var:v })} />
+              </>
+            )}
+
+            {kind==="history" && (() => {
+              const nodesList = activeTab?.nodes ?? [];
+              const loggableNodes = nodesList.filter(n =>
+                ["cmd", "python", "ocr", "ia", "vpo"].includes(n.data.kind as string)
+              );
+              return (
+                <div style={S.row}>
+                  <span style={S.label}>Nœud cible lié</span>
+                  <select
+                    value={(data.targetNodeId as string) ?? ""}
+                    onChange={e => {
+                      const id = e.target.value;
+                      const targetNode = loggableNodes.find(n => n.id === id);
+                      patch({
+                        targetNodeId: id,
+                        targetNodeLabel: targetNode ? (targetNode.data.label as string) : ""
+                      });
+                    }}
+                    style={{ ...S.input, background: "#0e0e10" }}
+                  >
+                    <option value="">-- Choisir un nœud --</option>
+                    {loggableNodes.map(n => (
+                      <option key={n.id} value={n.id}>
+                        {n.data.label as string} ({n.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })()}
 
             {kind==="cmd" && <CmdFields data={data} onChange={patch} nodeId={node.id} />}
             {kind==="python" && <PythonFields data={data} onChange={patch} nodeId={node.id} />}

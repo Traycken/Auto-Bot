@@ -1,11 +1,9 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useNodeWidth, useEditorStore } from "../store/editorStore";
 
 interface ForData { var_name: string; from: string; to: string; step: string; [key: string]: unknown; }
 
-// Width = 200px (10 × 20px snap grid)
-// Total height is fixed so handles sit exactly on the bottom border
-const NODE_W = 200;
 const C = "#7F77DD";
 
 const HANDLES = [
@@ -15,16 +13,20 @@ const HANDLES = [
   { id: "after", label: "→ suite",  color: "#999",    type: "source" as const, pct: "87.5%" },
 ];
 
-export const ForNode = memo(function ForNode({ data, selected }: NodeProps) {
+export const ForNode = memo(function ForNode({ id, data, selected }: NodeProps) {
+  const NODE_W = useNodeWidth();
   const d = data as ForData;
+
+  const currentTick = useEditorStore(s => s.forTicks[id]);
+  const active = useEditorStore(s => s.activeNodeId === id);
 
   return (
     <div style={{
       width: NODE_W,
       background: "#18181b",
-      border: `1px solid ${selected ? C : "#2a2a2e"}`,
+      border: `1px solid ${active ? C : selected ? "#e0e0e0" : "#2a2a2e"}`,
       borderRadius: 8,
-      boxShadow: selected ? `0 0 0 2px ${C}33` : "0 2px 8px #0006",
+      boxShadow: active ? `0 0 12px ${C}55` : selected ? `0 0 0 2px ${C}33` : "0 2px 8px #0006",
       fontFamily: "monospace",
       position: "relative",
     }}>
@@ -37,7 +39,30 @@ export const ForNode = memo(function ForNode({ data, selected }: NodeProps) {
         <div style={{ width: 20, height: 20, borderRadius: 5, background: C, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <i className="ti ti-arrows-right-left" style={{ fontSize: 11, color: "#fff" }} />
         </div>
-        <span style={{ fontWeight: 500, color: "#e0e0e0", fontSize: 11 }}>Boucle FOR</span>
+        <span style={{ fontWeight: 500, color: "#e0e0e0", fontSize: 11 }}>
+          Boucle FOR{d.alias ? ` (${d.alias})` : ""}
+        </span>
+        {currentTick !== undefined && (
+          <span style={{ marginLeft: "auto", fontSize: 9, padding: "1px 5px", background: `${C}22`, border: `0.5px solid ${C}`, borderRadius: 4, color: "#fff" }}>
+            {d.var_name || "i"} = {currentTick}
+          </span>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "for_loop" } }));
+          }}
+          title="Aide sur ce bloc"
+          style={{
+            width:16, height:16, borderRadius:4, background:"transparent",
+            border:"0.5px solid #333", cursor:"pointer", display:"flex",
+            alignItems:"center", justifyContent:"center", padding:0, flexShrink:0,
+            color:"#555", fontSize:9, lineHeight:1, fontFamily:"monospace",
+            marginLeft: currentTick !== undefined ? 0 : "auto"
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#555")}
+        >?</button>
       </div>
 
       {/* Expression */}

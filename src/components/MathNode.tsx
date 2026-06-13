@@ -1,11 +1,12 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
+import { useNodeWidth } from "../store/editorStore";
+
 interface MathData { target_var: string; expression: string; [key: string]: unknown; }
 
-const NODE_W = 180;
-
 export const MathNode = memo(function MathNode({ data, selected }: NodeProps) {
+  const NODE_W = useNodeWidth();
   const d = data as MathData;
   const C = "#7F77DD";
 
@@ -33,7 +34,24 @@ export const MathNode = memo(function MathNode({ data, selected }: NodeProps) {
         <div style={{ width:20, height:20, borderRadius:5, background:C, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
           <i className="ti ti-calculator" style={{ fontSize:11, color:"#fff" }} />
         </div>
-        <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11 }}>Math</span>
+        <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11, flex:1 }}>
+          Math{d.alias ? ` (${d.alias})` : ""}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "math" } }));
+          }}
+          title="Aide sur ce bloc"
+          style={{
+            width:16, height:16, borderRadius:4, background:"transparent",
+            border:"0.5px solid #333", cursor:"pointer", display:"flex",
+            alignItems:"center", justifyContent:"center", padding:0, flexShrink:0,
+            color:"#555", fontSize:9, lineHeight:1, fontFamily:"monospace",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#555")}
+        >?</button>
       </div>
 
       <div style={{ padding:"7px 10px 9px", fontSize:10 }}>

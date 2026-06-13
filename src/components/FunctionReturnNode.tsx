@@ -1,9 +1,10 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
+import { useNodeWidth } from "../store/editorStore";
+
 interface FunctionReturnData { value: string; [key: string]: unknown; }
 
-const NODE_W = 200;
 const C = "#EF9F27";
 
 function renderExpr(expr: string) {
@@ -15,6 +16,7 @@ function renderExpr(expr: string) {
 }
 
 export const FunctionReturnNode = memo(function FunctionReturnNode({ data, selected }: NodeProps) {
+  const NODE_W = useNodeWidth();
   const d = data as FunctionReturnData;
 
   return (
@@ -37,7 +39,22 @@ export const FunctionReturnNode = memo(function FunctionReturnNode({ data, selec
           <i className="ti ti-corner-up-left" style={{ fontSize:11, color:"#fff" }} />
         </div>
         <span style={{ fontWeight:600, color:C, fontSize:11, letterSpacing:"0.06em" }}>RETOUR</span>
-        <span style={{ marginLeft:"auto", fontSize:9, color:`${C}99`, background:`${C}18`, padding:"1px 6px", borderRadius:4 }}>sortie</span>
+        <span style={{ marginLeft:"auto", fontSize:9, color:`${C}99`, background:`${C}18`, padding:"1px 6px", borderRadius:4, marginRight:4 }}>sortie</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "function_return" } }));
+          }}
+          title="Aide sur ce bloc"
+          style={{
+            width:16, height:16, borderRadius:4, background:"transparent",
+            border:"0.5px solid #4a3a10", cursor:"pointer", display:"flex",
+            alignItems:"center", justifyContent:"center", padding:0, flexShrink:0,
+            color:"#555", fontSize:9, lineHeight:1, fontFamily:"monospace",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#555")}
+        >?</button>
       </div>
 
       {/* Value preview */}

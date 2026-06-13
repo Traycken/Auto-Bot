@@ -99,6 +99,88 @@ interface EditorStore {
   clipboard: MacroNode[];
   copyNodes: (ids: string[]) => void;
   pasteNodes: () => void;
+  translations: Record<string, string>;
+  loadTranslations: (lang: string) => Promise<void>;
+
+  activeNodeId: string | null;
+  lastNodeId: string | null;
+  waitProgress: Record<string, number>;
+  forTicks: Record<string, string>;
+  edgeThickness: number;
+  setEdgeThickness: (t: number) => void;
+  clearCmdHistory: (nodeId: string) => void;
+  unsupervisedCycles: string[]; // Edge IDs causing cycle
+  acceptUnsupervisedRun: boolean;
+  setAcceptUnsupervisedRun: (v: boolean) => void;
+}
+
+export function detectUnsupervisedCycles(nodes: MacroNode[], edges: MacroEdge[]): string[] {
+  const edgeMap = new Map<string, string[]>(); // node -> edges
+  for (const edge of edges) {
+    if (!edgeMap.has(edge.source)) {
+      edgeMap.set(edge.source, []);
+    }
+    edgeMap.get(edge.source)!.push(edge.id);
+  }
+
+  const nodeMap = new Map<string, MacroNode>();
+  for (const n of nodes) {
+    nodeMap.set(n.id, n);
+  }
+
+  const cycleEdges = new Set<string>();
+
+  function dfs(nodeId: string, visited: Set<string>, edgePath: string[]) {
+    const node = nodeMap.get(nodeId);
+    if (!node) return;
+
+    const outEdges = edgeMap.get(nodeId) ?? [];
+    for (const edgeId of outEdges) {
+      const edge = edges.find(e => e.id === edgeId);
+      if (!edge) continue;
+
+      const neighborId = edge.target;
+      const neighborIndex = visited.has(neighborId) ? edgePath.findIndex(eid => {
+        const eg = edges.find(e => e.id === eid);
+        return eg && eg.source === neighborId;
+      }) : -1;
+
+      if (neighborIndex !== -1) {
+        // Cycle detected! Check if any node in the cycle path is supervised
+        const cycleEdgeIds = edgePath.slice(neighborIndex);
+        cycleEdgeIds.push(edgeId);
+
+        let supervised = false;
+        for (const eid of cycleEdgeIds) {
+          const eg = edges.find(e => e.id === eid);
+          if (eg) {
+            const srcNode = nodeMap.get(eg.source);
+            if (srcNode && ["for_loop", "iterations", "foreach"].includes(srcNode.data.kind)) {
+              supervised = true;
+              break;
+            }
+          }
+        }
+
+        if (!supervised) {
+          cycleEdges.add(edgeId);
+        }
+      } else if (!visited.has(neighborId)) {
+        visited.add(neighborId);
+        edgePath.push(edgeId);
+        dfs(neighborId, visited, edgePath);
+        edgePath.pop();
+        visited.delete(neighborId);
+      }
+    }
+  }
+
+  // Run DFS from each node to ensure we cover disconnected subgraphs
+  for (const node of nodes) {
+    dfs(node.id, new Set([node.id]), []);
+  }
+
+  return Array.from(cycleEdges);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -116,6 +198,8 @@ export function nodeTypeForKind(kind: BlockKind): string {
   if (kind === "math")            return "mathNode";
   if (kind === "random")          return "randomNode";
   if (kind === "function_call")   return "functionCallNode";
+  if (kind === "switch")          return "switchNode";
+  if ((kind as string) === "history") return "historyNode";
   return "macroBlock";
 }
 
@@ -191,18 +275,126 @@ function loadRestartSnapshot(): Partial<Pick<EditorStore, "tabs" | "activeTabId"
 
 const restartSnapshot = loadRestartSnapshot();
 
-export const useEditorStore = create<EditorStore>((set, get) => ({
-  tabs: restartSnapshot?.tabs ?? [INITIAL_MAIN_TAB],
-  activeTabId: restartSnapshot?.activeTabId ?? INITIAL_MAIN_TAB.id,
-  selectedNodeId: restartSnapshot?.selectedNodeId ?? null,
-  status: "idle",
-  log: [],
-  cmdHistory: {},
-  variables: restartSnapshot?.variables ?? [],
-  clipboard: [],
+export const useEditorStore = create<EditorStore>((originalSet, get) => {
+  // Override set locally so all actions automatically trigger the update of nodes & edges
+  const set = (
+    partial: EditorStore | Partial<EditorStore> | ((state: EditorStore) => EditorStore | Partial<EditorStore>),
+    replace?: boolean
+  ) => {
+    originalSet((state: EditorStore) => {
+      const next = typeof partial === "function" ? (partial as Function)(state) : partial;
+      const merged = { ...state, ...next };
 
-  get nodes() { return getActiveTab(get())?.nodes ?? []; },
-  get edges() { return getActiveTab(get())?.edges ?? []; },
+      const activeTab = merged.tabs.find((t: any) => t.id === merged.activeTabId);
+      merged.nodes = activeTab?.nodes ?? [];
+
+      if (activeTab) {
+        const baseEdges = activeTab.edges;
+        const cycles = detectUnsupervisedCycles(activeTab.nodes, baseEdges);
+        const virtualEdges: any[] = [];
+        activeTab.nodes.forEach((node: any) => {
+          if ((node.data?.kind as string) === "history" && node.data?.targetNodeId) {
+            virtualEdges.push({
+              id: `virt-edge-${node.id}`,
+              source: node.data.targetNodeId as string,
+              target: node.id,
+              targetHandle: "virt_target",
+              type: "smoothstep",
+              style: { strokeDasharray: "3 3", stroke: "#64748B", opacity: 0.6 },
+              animated: false,
+              reconnectable: false,
+              focusable: false,
+              deletable: false,
+            });
+          }
+        });
+
+        const processedBaseEdges = baseEdges.map((edge: any) => {
+          if (cycles.includes(edge.id)) {
+            return {
+              ...edge,
+              style: { ...edge.style, stroke: "#E24B4A", strokeWidth: 3 },
+              animated: true,
+            };
+          }
+          return edge;
+        });
+
+        merged.edges = [...processedBaseEdges, ...virtualEdges];
+      } else {
+        merged.edges = [];
+      }
+
+      return merged;
+    }, replace);
+  };
+
+  // Compute initial states
+  const initialTabs = restartSnapshot?.tabs ?? [INITIAL_MAIN_TAB];
+  const initialActiveTabId = restartSnapshot?.activeTabId ?? INITIAL_MAIN_TAB.id;
+  const activeTab = initialTabs.find(t => t.id === initialActiveTabId);
+  const initialNodes = activeTab?.nodes ?? [];
+  const baseEdges = activeTab?.edges ?? [];
+  const cycles = detectUnsupervisedCycles(initialNodes, baseEdges);
+  const virtualEdges: any[] = [];
+  initialNodes.forEach(node => {
+    if ((node.data?.kind as string) === "history" && node.data?.targetNodeId) {
+      virtualEdges.push({
+        id: `virt-edge-${node.id}`,
+        source: node.data.targetNodeId as string,
+        target: node.id,
+        targetHandle: "virt_target",
+        type: "smoothstep",
+        style: { strokeDasharray: "3 3", stroke: "#64748B", opacity: 0.6 },
+        animated: false,
+        reconnectable: false,
+        focusable: false,
+        deletable: false,
+      });
+    }
+  });
+  const processedBaseEdges = baseEdges.map(edge => {
+    if (cycles.includes(edge.id)) {
+      return {
+        ...edge,
+        style: { ...edge.style, stroke: "#E24B4A", strokeWidth: 3 },
+        animated: true,
+      };
+    }
+    return edge;
+  });
+  const initialEdges = [...processedBaseEdges, ...virtualEdges];
+
+  return {
+    tabs: initialTabs,
+    activeTabId: initialActiveTabId,
+    nodes: initialNodes,
+    edges: initialEdges,
+    selectedNodeId: restartSnapshot?.selectedNodeId ?? null,
+    status: "idle",
+    log: [],
+    cmdHistory: {},
+    variables: restartSnapshot?.variables ?? [],
+    clipboard: [],
+    translations: {},
+    activeNodeId: null,
+    lastNodeId: null,
+    waitProgress: {},
+    forTicks: {},
+    edgeThickness: 4,
+    setEdgeThickness: (t) => set({ edgeThickness: t }),
+    unsupervisedCycles: [],
+    acceptUnsupervisedRun: false,
+    setAcceptUnsupervisedRun: (v) => set({ acceptUnsupervisedRun: v }),
+
+    async loadTranslations(lang: string) {
+      try {
+        const map = await invoke<Record<string, string>>("load_translations", { lang });
+        set({ translations: map });
+      } catch (e) {
+        console.error("Failed to load translations:", e);
+      }
+    },
 
   // ── Tab management ─────────────────────────────────────────────────────────
 
@@ -345,19 +537,20 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   onConnect(connection) {
+    if (connection.source === connection.target) {
+      console.warn("Self-connections are blocked.");
+      return;
+    }
     set(s => ({
       tabs: updateActiveTab(s, t => {
-        const targetAllowsMany =
-          connection.targetHandle === "loop" || connection.targetHandle === "break";
+        // Filter out only exact duplicate connections
         const filtered = t.edges.filter(e => {
-          const dupSource =
+          const isExactSame =
             e.source === connection.source &&
-            (e.sourceHandle ?? null) === (connection.sourceHandle ?? null);
-          const dupTarget =
-            !targetAllowsMany &&
+            (e.sourceHandle ?? null) === (connection.sourceHandle ?? null) &&
             e.target === connection.target &&
             (e.targetHandle ?? null) === (connection.targetHandle ?? null);
-          return !dupSource && !dupTarget;
+          return !isExactSame;
         });
         return { edges: addEdge({ ...connection, type: "smoothstep" }, filtered) };
       }),
@@ -409,7 +602,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   // ── Engine ─────────────────────────────────────────────────────────────────
 
   async runSequence() {
-    const { pushLog } = get();
+    const { pushLog, acceptUnsupervisedRun } = get();
     const activeTab = getActiveTab(get());
     if (!activeTab || activeTab.kind !== "main") {
       pushLog({ level: "error", message: "Seul l'onglet séquence peut être exécuté." });
@@ -418,16 +611,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     const { nodes, edges } = activeTab;
     if (!nodes.length) { pushLog({ level: "error", message: "Aucun bloc." }); return; }
 
+    const cycles = detectUnsupervisedCycles(nodes, edges);
+    if (cycles.length > 0 && !acceptUnsupervisedRun) {
+      throw new Error("unsupervised-cycle-detected");
+    }
+
+    const runnableNodes = nodes.filter(n => (n.data.kind as unknown as string) !== "history");
+    const runnableNodeIds = new Set(runnableNodes.map(n => n.id));
+    const runnableEdges = edges.filter(e => runnableNodeIds.has(e.source) && runnableNodeIds.has(e.target) && !e.id.startsWith("virt-edge-"));
+
     const graph = {
-      nodes: nodes.map(n => ({ id: n.id, data: n.data })),
-      edges: edges.map(e => ({
+      nodes: runnableNodes.map(n => ({ id: n.id, data: n.data })),
+      edges: runnableEdges.map(e => ({
         id: e.id, source: e.source, target: e.target,
         sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null,
       })),
     };
 
     set({ status: "running" });
-    pushLog({ level: "run", message: `Démarrage — ${nodes.length} nœuds, ${edges.length} connexions` });
+    pushLog({ level: "run", message: `Démarrage — ${runnableNodes.length} nœuds, ${runnableEdges.length} connexions` });
     try {
       await invoke("run_sequence", { graph });
     } catch (e) {
@@ -481,6 +683,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
   },
 
+  clearCmdHistory(nodeId) {
+    set(s => {
+      const newHistory = { ...s.cmdHistory };
+      delete newHistory[nodeId];
+      return { cmdHistory: newHistory };
+    });
+  },
+
   setVariable(name, value, description = "") {
     set(s => {
       const existing = s.variables.findIndex(v => v.name === name);
@@ -505,8 +715,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         const { save } = await import("@tauri-apps/plugin-dialog");
         const path = await save({
           title: "Sauvegarder la séquence",
-          filters: [{ name: "Auto Bot Sequence", extensions: ["absq"] }],
-          defaultPath: `${tab.name}.absq`,
+          filters: [{ name: "Auto Bot Sequence", extensions: ["absqc"] }],
+          defaultPath: `${tab.name}.absqc`,
         });
         if (!path) return;
         const data = JSON.stringify({ nodes: tab.nodes, edges: tab.edges, variables: get().variables }, null, 2);
@@ -576,7 +786,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const { open } = await import("@tauri-apps/plugin-dialog");
       const path = await open({
         title: "Ouvrir une séquence",
-        filters: [{ name: "Auto Bot Sequence", extensions: ["absq"] }],
+        filters: [{ name: "Auto Bot Sequence", extensions: ["absqc", "absq"] }],
         multiple: false, directory: false,
       }) as string | null;
       if (path) {
@@ -595,10 +805,86 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (existing) { set({ activeTabId: existing.id }); return; }
       const raw = await readTextFile(path);
       const data = JSON.parse(raw) as { nodes: MacroNode[]; edges: MacroEdge[]; variables?: VarEntry[] };
-      const baseName = path.split(/[/\\]/).pop()?.replace(/\.absq$/, "") ?? "Séquence";
+      const baseName = path.split(/[/\\]/).pop()?.replace(/\.(absq|absqc)$/, "") ?? "Séquence";
+      
+      const sanitizeNodeData = (d: any) => {
+        if (!d) return d;
+        const res = { ...d };
+        if (res.kind === "ocr" && "LANG" in res) {
+          if (res.lang === undefined) res.lang = res.LANG;
+          delete res.LANG;
+        }
+        if (res.kind === "key_press" && "hold ms" in res) {
+          if (res.hold_ms === undefined) res.hold_ms = res["hold ms"];
+          delete res["hold ms"];
+        }
+        if (res.kind === "mouse_move" && "Relative" in res) {
+          if (res.relative === undefined) res.relative = res.Relative;
+          delete res.Relative;
+        }
+        if (res.kind === "mouse_click") {
+          if ("double click" in res) {
+            if (res.double_click === undefined) res.double_click = res["double click"];
+            delete res["double click"];
+          }
+          if ("delay after ms" in res) {
+            if (res.delay_after_ms === undefined) res.delay_after_ms = res["delay after ms"];
+            delete res["delay after ms"];
+          }
+        }
+        if (res.kind === "type_text" && "delay between chars ms" in res) {
+          if (res.delay_between_chars_ms === undefined) res.delay_between_chars_ms = res["delay between chars ms"];
+          delete res["delay between chars ms"];
+        }
+        if ("Travel MS" in res) {
+          if (res.travel_ms === undefined) res.travel_ms = res["Travel MS"];
+          delete res["Travel MS"];
+        }
+        if ("travel ms" in res) {
+          if (res.travel_ms === undefined) res.travel_ms = res["travel ms"];
+          delete res["travel ms"];
+        }
+        
+        // Clean other direct legacy duplicates
+        const keys = Object.keys(res);
+        for (const k of keys) {
+          if (k === "LANG") {
+            if (res.lang === undefined) res.lang = res[k];
+            delete res[k];
+          } else if (k === "hold ms") {
+            if (res.hold_ms === undefined) res.hold_ms = res[k];
+            delete res[k];
+          } else if (k === "Relative") {
+            if (res.relative === undefined) res.relative = res[k];
+            delete res[k];
+          } else if (k === "double click") {
+            if (res.double_click === undefined) res.double_click = res[k];
+            delete res[k];
+          } else if (k === "delay after ms") {
+            if (res.delay_after_ms === undefined) res.delay_after_ms = res[k];
+            delete res[k];
+          } else if (k === "delay between chars ms") {
+            if (res.delay_between_chars_ms === undefined) res.delay_between_chars_ms = res[k];
+            delete res[k];
+          } else if (k === "Travel MS") {
+            if (res.travel_ms === undefined) res.travel_ms = res[k];
+            delete res[k];
+          } else if (k === "travel ms") {
+            if (res.travel_ms === undefined) res.travel_ms = res[k];
+            delete res[k];
+          }
+        }
+        return res;
+      };
+
+      const nodes: MacroNode[] = (data.nodes ?? []).map(n => ({
+        ...n,
+        data: sanitizeNodeData(n.data),
+      }));
+
       const newTab: Tab = {
         id: tabUid(), kind: "main", name: baseName,
-        nodes: data.nodes ?? [], edges: data.edges ?? [],
+        nodes, edges: data.edges ?? [],
         filePath: path, dirty: false,
       };
       set(s => ({
@@ -637,10 +923,81 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const data = JSON.parse(raw) as { name?: string; args?: unknown[]; nodes: { id: string; position: {x:number;y:number}; data: MacroNodeData }[]; edges: MacroEdge[] };
       const baseName = path.split(/[/\\]/).pop()?.replace(/\.abfnc$/, "") ?? "fonction";
       const tabName = (data.name && data.name !== "undefined") ? data.name : baseName;
+      
+      const sanitizeNodeData = (d: any) => {
+        if (!d) return d;
+        const res = { ...d };
+        if (res.kind === "ocr" && "LANG" in res) {
+          if (res.lang === undefined) res.lang = res.LANG;
+          delete res.LANG;
+        }
+        if (res.kind === "key_press" && "hold ms" in res) {
+          if (res.hold_ms === undefined) res.hold_ms = res["hold ms"];
+          delete res["hold ms"];
+        }
+        if (res.kind === "mouse_move" && "Relative" in res) {
+          if (res.relative === undefined) res.relative = res.Relative;
+          delete res.Relative;
+        }
+        if (res.kind === "mouse_click") {
+          if ("double click" in res) {
+            if (res.double_click === undefined) res.double_click = res["double click"];
+            delete res["double click"];
+          }
+          if ("delay after ms" in res) {
+            if (res.delay_after_ms === undefined) res.delay_after_ms = res["delay after ms"];
+            delete res["delay after ms"];
+          }
+        }
+        if (res.kind === "type_text" && "delay between chars ms" in res) {
+          if (res.delay_between_chars_ms === undefined) res.delay_between_chars_ms = res["delay between chars ms"];
+          delete res["delay between chars ms"];
+        }
+        if ("Travel MS" in res) {
+          if (res.travel_ms === undefined) res.travel_ms = res["Travel MS"];
+          delete res["Travel MS"];
+        }
+        if ("travel ms" in res) {
+          if (res.travel_ms === undefined) res.travel_ms = res["travel ms"];
+          delete res["travel ms"];
+        }
+        
+        // Clean other direct legacy duplicates
+        const keys = Object.keys(res);
+        for (const k of keys) {
+          if (k === "LANG") {
+            if (res.lang === undefined) res.lang = res[k];
+            delete res[k];
+          } else if (k === "hold ms") {
+            if (res.hold_ms === undefined) res.hold_ms = res[k];
+            delete res[k];
+          } else if (k === "Relative") {
+            if (res.relative === undefined) res.relative = res[k];
+            delete res[k];
+          } else if (k === "double click") {
+            if (res.double_click === undefined) res.double_click = res[k];
+            delete res[k];
+          } else if (k === "delay after ms") {
+            if (res.delay_after_ms === undefined) res.delay_after_ms = res[k];
+            delete res[k];
+          } else if (k === "delay between chars ms") {
+            if (res.delay_between_chars_ms === undefined) res.delay_between_chars_ms = res[k];
+            delete res[k];
+          } else if (k === "Travel MS") {
+            if (res.travel_ms === undefined) res.travel_ms = res[k];
+            delete res[k];
+          } else if (k === "travel ms") {
+            if (res.travel_ms === undefined) res.travel_ms = res[k];
+            delete res[k];
+          }
+        }
+        return res;
+      };
+
       const nodes: MacroNode[] = data.nodes.map(n => ({
         id: n.id, type: nodeTypeForKind(n.data.kind as BlockKind),
         position: n.position ?? { x: 0, y: 0 },
-        data: n.data,
+        data: sanitizeNodeData(n.data),
         deletable: !["function_args", "function_return"].includes(n.data.kind),
       }));
       const newTab: Tab = {
@@ -659,7 +1016,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const { open } = await import("@tauri-apps/plugin-dialog");
       const path = await open({
         title: "Ouvrir un fichier",
-        filters: [{ name: "Auto Bot Séquence / Fonction", extensions: ["absq", "abfnc"] }],
+        filters: [{ name: "Auto Bot Séquence / Fonction", extensions: ["absqc", "absq", "abfnc"] }],
         multiple: false, directory: false,
       }) as string | null;
       if (!path) return;
@@ -698,17 +1055,60 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   // ── Engine listeners ───────────────────────────────────────────────────────
 
   initEngineListeners() {
+    get().loadTranslations("fr");
     const unsubs: Array<() => void> = [];
-    const sub = (evt: string, fn: (p: unknown) => void) =>
+    const sub = (evt: string, fn: (p: any) => void) =>
       listen(evt, e => fn(e.payload)).then(u => unsubs.push(u));
-    sub("engine://started",     () => set({ status: "running" }));
-    sub("engine://done",        () => { set({ status: "idle" }); get().pushLog({ level: "ok", message: "Séquence terminée ✓" }); });
-    sub("engine://stopped",     () => set({ status: "idle" }));
-    sub("engine://error",       m => { set({ status: "error" }); get().pushLog({ level: "error", message: String(m) }); });
+    
+    const resetRuntimeFeedback = () => set({
+      activeNodeId: null,
+      lastNodeId: null,
+      waitProgress: {},
+      forTicks: {},
+    });
+
+    sub("engine://started",     () => { set({ status: "running" }); resetRuntimeFeedback(); });
+    sub("engine://done",        () => { set({ status: "idle" }); resetRuntimeFeedback(); get().pushLog({ level: "ok", message: "Séquence terminée ✓" }); });
+    sub("engine://stopped",     () => { set({ status: "idle" }); resetRuntimeFeedback(); });
+    sub("engine://error",       m => { set({ status: "error" }); resetRuntimeFeedback(); get().pushLog({ level: "error", message: String(m) }); });
     sub("engine://log",         m => { get().pushLog({ level: "info", message: String(m) }); });
-    sub("engine://block-start", b => get().pushLog({ level: "run",  message: `→ ${(b as { kind?: string })?.kind ?? "?"}` }));
-    sub("engine://block-done",  b => get().pushLog({ level: "ok",   message: `✓ ${(b as { kind?: string })?.kind ?? "?"}` }));
-    sub("engine://for-tick",    d => { const p = d as { var?: string; value?: string }; get().pushLog({ level: "info", message: `${p?.var ?? "i"} = ${p?.value ?? "?"}` }); });
+    
+    sub("engine://block-start", b => {
+      const payload = b as { node_id?: string; kind?: string };
+      if (payload.node_id) {
+        set(s => ({
+          lastNodeId: s.activeNodeId,
+          activeNodeId: payload.node_id ?? null
+        }));
+      }
+      get().pushLog({ level: "run",  message: `→ ${payload.kind ?? "?"}` });
+    });
+    
+    sub("engine://block-done",  b => {
+      const payload = b as { node_id?: string; kind?: string };
+      set({ activeNodeId: null });
+      get().pushLog({ level: "ok",   message: `✓ ${payload.kind ?? "?"}` });
+    });
+    
+    sub("engine://for-tick",    d => {
+      const p = d as { node_id?: string; var?: string; value?: string };
+      if (p?.node_id && p?.value) {
+        set(s => ({
+          forTicks: { ...s.forTicks, [p.node_id!]: p.value! }
+        }));
+      }
+      get().pushLog({ level: "info", message: `${p?.var ?? "i"} = ${p?.value ?? "?"}` });
+    });
+    
+    sub("engine://wait-progress", d => {
+      const p = d as { node_id?: string; progress?: number };
+      if (p?.node_id && typeof p.progress === "number") {
+        set(s => ({
+          waitProgress: { ...s.waitProgress, [p.node_id!]: p.progress! }
+        }));
+      }
+    });
+
     sub("engine://if-result",   r => get().pushLog({ level: "info", message: `si → ${r ? "vrai ✓" : "faux ✗"}` }));
     sub("engine://pixel-result",r => get().pushLog({ level: "info", message: `pixel → ${r ? "✓ match" : "✗ no match"}` }));
     sub("engine://image-result",r => {
@@ -719,6 +1119,74 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const p = d as { node_id?: string; entry?: CmdLogEntry };
       if (p?.node_id && p?.entry) get().pushCmdLog(p.node_id, p.entry);
     });
+
+    sub("engine://request-run", () => {
+      const s = get().status;
+      if (s === "running") get().stopSequence(); else get().runSequence();
+    });
+
+    sub("engine://request-f8-capture", () => {
+      invoke<{ x: number; y: number }>("get_cursor_position")
+        .then(pos => {
+          const state = get();
+          // Update selected node coordinates if applicable
+          const activeTab = state.tabs.find(t => t.id === state.activeTabId);
+          if (activeTab && state.selectedNodeId) {
+            const node = activeTab.nodes.find(n => n.id === state.selectedNodeId);
+            if (node) {
+              const kind = node.data?.kind;
+              if (kind === "mouse_move" || kind === "mouse_click" || kind === "mouse_scroll" || kind === "pixel_color" || kind === "ocr") {
+                state.updateNodeData(node.id, { x: String(pos.x), y: String(pos.y) });
+              } else if (kind === "image_match") {
+                state.updateNodeData(node.id, { region_x: String(pos.x), region_y: String(pos.y) });
+              }
+            }
+          }
+        })
+        .catch(() => {});
+    });
+
     return () => unsubs.forEach(u => u());
   },
-}));
+};
+});
+
+export function t(key: string, defaultValue?: string): string {
+  const trans = useEditorStore.getState().translations;
+  return trans[key] ?? defaultValue ?? key;
+}
+
+export function useNodeWidth(): number {
+  return useEditorStore(state => {
+    const activeTab = state.tabs.find(t => t.id === state.activeTabId);
+    if (!activeTab || activeTab.nodes.length === 0) return 200;
+    
+    let maxW = 200;
+    for (const node of activeTab.nodes) {
+      const label = node.data?.label ?? "";
+      let w = label.length * 8 + 80;
+      
+      const kind = node.data?.kind;
+      if (kind === "for_loop") {
+        const d = node.data;
+        const exprStr = `pour ${d.var_name || "i"} de ${d.from || "0"} à ${d.to || "10"} pas ${d.step || "1"}`;
+        w = Math.max(w, exprStr.length * 7 + 30);
+      } else if (kind === "if") {
+        const condStr = `si ${node.data.condition || ""}`;
+        w = Math.max(w, condStr.length * 7 + 30);
+      } else if (kind === "math") {
+        const mathStr = `${node.data.target_var || "result"} = ${node.data.expression || "0"}`;
+        w = Math.max(w, mathStr.length * 7 + 30);
+      } else if (kind === "random") {
+        const randStr = `${node.data.var_name || "result"} = rnd(${node.data.min || "0"}, ${node.data.max || "100"})`;
+        w = Math.max(w, randStr.length * 7 + 30);
+      }
+      
+      if (w > maxW) {
+        maxW = w;
+      }
+    }
+    const snapped = Math.ceil(maxW / 20) * 20;
+    return Math.max(180, Math.min(snapped, 360));
+  });
+}

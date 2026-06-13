@@ -1,12 +1,14 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
+import { useNodeWidth } from "../store/editorStore";
+
 interface RandomData { mode: string; min: string; max: string; output_var: string; use_seed: boolean; seed: string; list_items: string; [key: string]: unknown; }
 
-const NODE_W = 180;
 const C = "#D4537E";
 
 export const RandomNode = memo(function RandomNode({ data, selected }: NodeProps) {
+  const NODE_W = useNodeWidth();
   const d = data as RandomData;
   return (
     <div style={{ width: NODE_W, background: "#18181b", border: `1px solid ${selected ? C : "#2a2a2e"}`, borderRadius: 8, boxShadow: selected ? `0 0 0 2px ${C}33` : "0 2px 8px #0006", fontFamily: "monospace", position: "relative" }}>
@@ -15,8 +17,25 @@ export const RandomNode = memo(function RandomNode({ data, selected }: NodeProps
         <div style={{ width: 20, height: 20, borderRadius: 5, background: C, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <i className="ti ti-dice" style={{ fontSize: 11, color: "#fff" }} />
         </div>
-        <span style={{ fontWeight: 500, color: "#e0e0e0", fontSize: 11 }}>Aléatoire</span>
-        <span style={{ marginLeft: "auto", fontSize: 9, color: C, background: `${C}22`, padding: "1px 6px", borderRadius: 4 }}>{d.mode?.toUpperCase()}</span>
+        <span style={{ fontWeight: 500, color: "#e0e0e0", fontSize: 11 }}>
+          Aléatoire{d.alias ? ` (${d.alias})` : ""}
+        </span>
+        <span style={{ marginLeft: "auto", fontSize: 9, color: C, background: `${C}22`, padding: "1px 6px", borderRadius: 4, marginRight: 5 }}>{d.mode?.toUpperCase()}</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "random" } }));
+          }}
+          title="Aide sur ce bloc"
+          style={{
+            width:16, height:16, borderRadius:4, background:"transparent",
+            border:"0.5px solid #333", cursor:"pointer", display:"flex",
+            alignItems:"center", justifyContent:"center", padding:0, flexShrink:0,
+            color:"#555", fontSize:9, lineHeight:1, fontFamily:"monospace",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#555")}
+        >?</button>
       </div>
       <div style={{ padding: "7px 10px 9px", fontSize: 10 }}>
         {d.mode === "list"

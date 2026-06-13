@@ -1,14 +1,12 @@
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { CmdHistoryModal } from "./CmdHistoryModal";
+import { useNodeWidth, useEditorStore } from "../store/editorStore";
 
 interface BlockNodeData {
   label: string; color: string; icon: string; kind: string;
   [key: string]: unknown;
 }
-
-// All blocks snap to 180px width (9 × 20px grid)
-const NODE_W = 180;
 
 const BLACKLIST = new Set([
   "label","color","icon","kind","children",
@@ -45,6 +43,7 @@ const KEY_MAP: Record<string, string> = {
 const DUAL_HANDLE_KINDS = new Set(["image_match", "pixel_color", "ocr"]);
 
 export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected }: NodeProps) {
+  const NODE_W = useNodeWidth();
   const d = data as BlockNodeData;
   const [cmdHistoryOpen, setCmdHistoryOpen] = useState(false);
   const fields = Object.entries(d)
@@ -53,6 +52,9 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
 
   const hasDualHandles = DUAL_HANDLE_KINDS.has(d.kind);
 
+  const active = useEditorStore(s => s.activeNodeId === id);
+  const waitProgress = useEditorStore(s => s.waitProgress[id]);
+
   const openHelp = (e: React.MouseEvent) => {
     e.stopPropagation();
     window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: d.kind } }));
@@ -60,16 +62,47 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
 
   const openCmdHistory = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setCmdHistoryOpen(true);
+    const store = useEditorStore.getState();
+    const activeTab = store.tabs.find(t => t.id === store.activeTabId);
+    if (!activeTab) return;
+
+    // Look for an existing historyNode targeting this node
+    const existing = activeTab.nodes.find(n => (n.data?.kind as string) === "history" && n.data?.targetNodeId === id);
+    if (existing) {
+      store.selectNode(existing.id);
+      return;
+    }
+
+    // Otherwise, spawn a new historyNode placed 150px to the right
+    const currentNodes = activeTab.nodes;
+    const thisNode = currentNodes.find(n => n.id === id);
+    const pos = thisNode ? { x: thisNode.position.x + 240, y: thisNode.position.y } : { x: 100, y: 100 };
+
+    store.addNode("history" as any, pos);
+    // Find the newly added node (it will be the last element or selectedNodeId)
+    setTimeout(() => {
+      const updatedStore = useEditorStore.getState();
+      const updatedTab = updatedStore.tabs.find(t => t.id === updatedStore.activeTabId);
+      if (updatedTab) {
+        // The newly added node is selected
+        const newId = updatedStore.selectedNodeId;
+        if (newId) {
+          updatedStore.updateNodeData(newId, {
+            targetNodeId: id,
+            targetNodeLabel: d.label,
+          });
+        }
+      }
+    }, 50);
   };
 
   return (
     <div style={{
       width: NODE_W,
       background: "#18181b",
-      border: `1px solid ${selected ? d.color : "#2a2a2e"}`,
+      border: `1px solid ${active ? d.color : selected ? "#e0e0e0" : "#2a2a2e"}`,
       borderRadius: 8,
-      boxShadow: selected ? `0 0 0 2px ${d.color}33` : "0 2px 8px #0006",
+      boxShadow: active ? `0 0 12px ${d.color}55` : selected ? `0 0 0 2px ${d.color}33` : "0 2px 8px #0006",
       fontFamily: "monospace",
       position: "relative",
     }}>
@@ -82,8 +115,10 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
         <div style={{ width:20, height:20, borderRadius:5, background:d.color, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
           <i className={`ti ${d.icon}`} style={{ fontSize:11, color:"#fff" }} />
         </div>
-        <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{d.label}</span>
-        {d.kind === "cmd" && (
+        <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>
+          {d.label}{d.alias ? ` (${d.alias})` : ""}
+        </span>
+        {d.kind !== "console" && (d.kind as string) !== "history" && (
           <button
             onClick={openCmdHistory}
             title="Historique console"
@@ -129,6 +164,13 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Wait progress bar */}
+      {d.kind === "wait" && waitProgress !== undefined && (
+        <div style={{ height: 3, width: "100%", background: "#222" }}>
+          <div style={{ height: "100%", width: `${waitProgress}%`, background: d.color, transition: "width 0.05s linear" }} />
         </div>
       )}
 

@@ -3,6 +3,7 @@
  * Fonctionne avec onMouseDown pour éviter les conflits avec le ReactFlow focus.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useEditorStore } from "../store/editorStore";
 
 // ── Types internes ────────────────────────────────────────────────────────────
@@ -123,10 +124,42 @@ export function MenuBar({ onOpenHelp, onOpenSettings }: { onOpenHelp?: () => voi
 
   const [openMenu, setOpenMenu] = useState<MenuId>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState<number>(() => {
+    const saved = localStorage.getItem("autobot_ui_zoom");
+    return saved ? Number(saved) : 100;
+  });
+
+  useEffect(() => {
+    invoke("set_webview_zoom", { factor: zoom / 100 }).catch(err => console.error("Webview zoom error:", err));
+  }, [zoom]);
+
+  const handleZoom = (delta: number) => {
+    setZoom(z => {
+      const next = Math.min(150, Math.max(70, z + delta));
+      localStorage.setItem("autobot_ui_zoom", String(next));
+      return next;
+    });
+  };
+
+  const handleResetZoom = () => {
+    setZoom(100);
+    localStorage.setItem("autobot_ui_zoom", "100");
+  };
 
   const activeTab  = tabs.find(t => t.id === activeTabId);
   const isMain     = activeTab?.kind === "main";
   const isRunning  = status === "running";
+
+  useEffect(() => {
+    const handleCustomZoom = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (typeof detail === "number") {
+        setZoom(detail);
+      }
+    };
+    window.addEventListener("autobot-zoom-changed", handleCustomZoom);
+    return () => window.removeEventListener("autobot-zoom-changed", handleCustomZoom);
+  }, []);
 
   // Fermer sur clic extérieur
   useEffect(() => {
@@ -247,7 +280,7 @@ export function MenuBar({ onOpenHelp, onOpenSettings }: { onOpenHelp?: () => voi
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 2,
+        justifyContent: "space-between",
         padding: "0 8px",
         height: 30,
         background: "#0c0c0f",
@@ -256,34 +289,76 @@ export function MenuBar({ onOpenHelp, onOpenSettings }: { onOpenHelp?: () => voi
         userSelect: "none",
       }}
     >
-      {/* Logo micro */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 6,
-        paddingRight: 10, marginRight: 4,
-        borderRight: "0.5px solid #1a1a1e",
-      }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+        {/* Logo micro */}
         <div style={{
-          width: 16, height: 16, borderRadius: 4, background: "#E84C1E",
-          display: "flex", alignItems: "center", justifyContent: "center",
+          display: "flex", alignItems: "center", gap: 6,
+          paddingRight: 10, marginRight: 4,
+          borderRight: "0.5px solid #1a1a1e",
         }}>
-          <i className="ti ti-robot" style={{ fontSize: 9, color: "#fff" }} />
+          <div style={{
+            width: 16, height: 16, borderRadius: 4, background: "#E84C1E",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <i className="ti ti-robot" style={{ fontSize: 9, color: "#fff" }} />
+          </div>
+          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#555", letterSpacing: "0.04em" }}>
+            Auto Bot
+          </span>
         </div>
-        <span style={{ fontSize: 10, fontFamily: "monospace", color: "#555", letterSpacing: "0.04em" }}>
-          Auto Bot
-        </span>
+
+        {menus.map(m => (
+          <DropMenu
+            key={m.id}
+            id={m.id}
+            label={m.label}
+            open={openMenu === m.id}
+            items={m.items}
+            onToggle={toggle}
+            onClose={close}
+          />
+        ))}
       </div>
 
-      {menus.map(m => (
-        <DropMenu
-          key={m.id}
-          id={m.id}
-          label={m.label}
-          open={openMenu === m.id}
-          items={m.items}
-          onToggle={toggle}
-          onClose={close}
-        />
-      ))}
+      {/* Interface Zoom Control buttons */}
+      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <span style={{ fontSize: 10, fontFamily: "monospace", color: "#555", marginRight: 5 }}>
+          Zoom: {zoom}%
+        </span>
+        <button
+          onClick={() => handleZoom(-10)}
+          title="Réduire l'interface"
+          style={{
+            background: "#18181b", border: "0.5px solid #2a2a2e", borderRadius: 4,
+            color: "#bbb", width: 20, height: 20, cursor: "pointer", fontSize: 11,
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}
+        >
+          -
+        </button>
+        <button
+          onClick={handleResetZoom}
+          title="Réinitialiser le zoom"
+          style={{
+            background: "#18181b", border: "0.5px solid #2a2a2e", borderRadius: 4,
+            color: "#bbb", padding: "0 5px", height: 20, cursor: "pointer", fontSize: 10,
+            display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace"
+          }}
+        >
+          Reset
+        </button>
+        <button
+          onClick={() => handleZoom(10)}
+          title="Agrandir l'interface"
+          style={{
+            background: "#18181b", border: "0.5px solid #2a2a2e", borderRadius: 4,
+            color: "#bbb", width: 20, height: 20, cursor: "pointer", fontSize: 11,
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}
+        >
+          +
+        </button>
+      </div>
     </div>
   );
 }

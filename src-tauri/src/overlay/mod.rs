@@ -157,7 +157,19 @@ fn virtual_desktop_bounds() -> Result<(i32, i32, u32, u32), String> {
     let min_y = monitors.iter().map(|m| m.y()).min().unwrap_or(0);
     let max_x = monitors.iter().map(|m| m.x() + m.width() as i32).max().unwrap_or(1920);
     let max_y = monitors.iter().map(|m| m.y() + m.height() as i32).max().unwrap_or(1080);
-    Ok((min_x, min_y, (max_x - min_x).max(1) as u32, (max_y - min_y).max(1) as u32))
+    
+    let w = (max_x - min_x).max(1) as u32;
+    let h = (max_y - min_y).max(1) as u32;
+    
+    let extra_w = (w as f64 * 0.1).round() as u32;
+    let extra_h = (h as f64 * 0.1).round() as u32;
+    
+    let new_w = w + extra_w;
+    let new_h = h + extra_h;
+    let new_x = min_x - (extra_w / 2) as i32;
+    let new_y = min_y - (extra_h / 2) as i32;
+    
+    Ok((new_x, new_y, new_w, new_h))
 }
 
 fn screen_for_region(x: i32, y: i32, w: u32, h: u32) -> i32 {

@@ -18,10 +18,11 @@ import { RandomNode }          from "./components/RandomNode";
 import { FunctionArgsNode }    from "./components/FunctionArgsNode";
 import { FunctionReturnNode }  from "./components/FunctionReturnNode";
 import { FunctionCallNode }    from "./components/FunctionCallNode";
+import { HistoryNode }         from "./components/HistoryNode";
+import { SwitchNode }          from "./components/SwitchNode";
 import { Inspector }           from "./components/Inspector";
-import { LogPanel }            from "./components/LogPanel";
+import { Console }             from "./components/Console";
 import { Toolbar }             from "./components/Toolbar";
-import { DebugConsole }        from "./components/DebugConsole";
 import { AnimatedEdge }        from "./components/AnimatedEdge";
 import { TabBar }              from "./components/TabBar";
 import { MenuBar }             from "./components/MenuBar";
@@ -38,6 +39,8 @@ const nodeTypes: NodeTypes = {
   functionArgsNode:    FunctionArgsNode,
   functionReturnNode:  FunctionReturnNode,
   functionCallNode:    FunctionCallNode,
+  switchNode:          SwitchNode,
+  historyNode:         HistoryNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -123,11 +126,11 @@ function AppInner() {
     runSequence, stopSequence,
     copyNodes, pasteNodes, saveActiveTab, openAny,
     removeNode,
+    edges,
   } = useEditorStore();
 
   const activeTab = tabs.find(t => t.id === activeTabId);
   const nodes   = activeTab?.nodes ?? [];
-  const edges   = activeTab?.edges ?? [];
   const tabKind = activeTab?.kind ?? "main";
 
   const { screenToFlowPosition } = useReactFlow();
@@ -144,6 +147,23 @@ function AppInner() {
 
   // Settings modal state
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Cycle Modal State
+  const [showCycleModal, setShowCycleModal] = useState(false);
+  const acceptUnsupervisedRun = useEditorStore(s => s.acceptUnsupervisedRun);
+  const setAcceptUnsupervisedRun = useEditorStore(s => s.setAcceptUnsupervisedRun);
+
+  const handleRunSequence = useCallback(async () => {
+    try {
+      await runSequence();
+    } catch (e: any) {
+      if (e?.message === "unsupervised-cycle-detected") {
+        setShowCycleModal(true);
+      } else {
+        console.error(e);
+      }
+    }
+  }, [runSequence]);
 
   // Help modal state
   const { open: helpOpen, kind: helpKind, setOpen: setHelpOpen, setKind: setHelpKind, registerRef } = useHelpModal();
@@ -171,16 +191,56 @@ function AppInner() {
       if (e.key === "F8") {
         e.preventDefault();
         invoke<{ x: number; y: number }>("get_cursor_position")
-          .then(pos => setCursorPos(pos))
+          .then(pos => {
+            setCursorPos(pos);
+            const state = useEditorStore.getState();
+            const activeTab = state.tabs.find(t => t.id === state.activeTabId);
+            if (activeTab && state.selectedNodeId) {
+              const node = activeTab.nodes.find(n => n.id === state.selectedNodeId);
+              if (node) {
+                const kind = node.data?.kind;
+                if (kind === "mouse_move" || kind === "mouse_click" || kind === "mouse_scroll" || kind === "pixel_color" || kind === "ocr") {
+                  state.updateNodeData(node.id, { x: String(pos.x), y: String(pos.y) });
+                } else if (kind === "image_match") {
+                  state.updateNodeData(node.id, { region_x: String(pos.x), region_y: String(pos.y) });
+                }
+              }
+            }
+          })
           .catch(() => {});
       }
       if (e.key === "F6") {
         e.preventDefault();
         const s = useEditorStore.getState().status;
-        if (s === "running") stopSequence(); else runSequence();
+        if (s === "running") stopSequence(); else handleRunSequence();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault(); saveActiveTab();
+      }
+      // UI Zoom Keyboard Shortcuts
+      if ((e.ctrlKey || e.metaKey) && (e.key === "+" || e.key === "=")) {
+        e.preventDefault();
+        const saved = localStorage.getItem("autobot_ui_zoom");
+        const z = saved ? Number(saved) : 100;
+        const next = Math.min(150, z + 10);
+        localStorage.setItem("autobot_ui_zoom", String(next));
+        invoke("set_webview_zoom", { factor: next / 100 }).catch(err => console.error("Webview zoom error:", err));
+        window.dispatchEvent(new CustomEvent("autobot-zoom-changed", { detail: next }));
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "-" || e.key === "_")) {
+        e.preventDefault();
+        const saved = localStorage.getItem("autobot_ui_zoom");
+        const z = saved ? Number(saved) : 100;
+        const next = Math.max(70, z - 10);
+        localStorage.setItem("autobot_ui_zoom", String(next));
+        invoke("set_webview_zoom", { factor: next / 100 }).catch(err => console.error("Webview zoom error:", err));
+        window.dispatchEvent(new CustomEvent("autobot-zoom-changed", { detail: next }));
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "0") {
+        e.preventDefault();
+        localStorage.setItem("autobot_ui_zoom", "100");
+        invoke("set_webview_zoom", { factor: 1.0 }).catch(err => console.error("Webview zoom error:", err));
+        window.dispatchEvent(new CustomEvent("autobot-zoom-changed", { detail: 100 }));
       }
       if (!inInput) {
         if ((e.ctrlKey || e.metaKey) && e.key === "c") {
@@ -194,7 +254,7 @@ function AppInner() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [runSequence, stopSequence, copyNodes, pasteNodes, saveActiveTab, activeTabId]);
+  }, [handleRunSequence, stopSequence, copyNodes, pasteNodes, saveActiveTab, activeTabId]);
 
   // ── Drag depuis la palette ────────────────────────────────────────────────
   useEffect(() => {
@@ -264,10 +324,11 @@ function AppInner() {
     (acc, m) => { (acc[m.category] ??= []).push(m); return acc; }, {}
   );
 
+
   return (
     <div style={{
       display: "flex", flexDirection: "column",
-      width: "100vw", height: "100vh",
+      width: "100%", height: "100%",
       background: "#09090b", overflow: "hidden",
       cursor: drag ? "grabbing" : "default",
       userSelect: drag ? "none" : "auto",
@@ -276,7 +337,7 @@ function AppInner() {
       <MenuBar onOpenHelp={() => setHelpOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />
 
       {/* ── Toolbar run/stop + status ── */}
-      <Toolbar />
+      <Toolbar handleRun={handleRunSequence} />
 
       {/* ── Barre d'onglets ── */}
       <TabBar />
@@ -426,7 +487,7 @@ function AppInner() {
         <Inspector />
       </div>
 
-      <LogPanel />
+      <Console />
 
       {/* Ghost drag */}
       {drag && (
@@ -469,7 +530,71 @@ function AppInner() {
         onClose={() => setSettingsOpen(false)}
       />
 
-      <DebugConsole />
+      {/* ── Unsupervised Loop Warning Modal ── */}
+      {showCycleModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 99999,
+          background: "#000b", display: "flex",
+          alignItems: "center", justifyContent: "center"
+        }}>
+          <div style={{
+            background: "#18181b", border: "1px solid #E24B4A",
+            borderRadius: 10, padding: 20, width: 450,
+            fontFamily: "monospace", boxShadow: "0 10px 30px #000e"
+          }}>
+            <h3 style={{ color: "#E24B4A", display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 12 }}>
+              <i className="ti ti-alert-triangle" />
+              ATTENTION : Boucle Infinie Détectée
+            </h3>
+            <p style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5, marginBottom: 16 }}>
+              Votre séquence contient des connexions formant une boucle infinie non supervisée (sans nœud "Boucle FOR", "Itérations" ou "ForEach" intermédiaire). 
+              <br /><br />
+              Lancer l'exécution de cette boucle risque de saturer le processeur ou de faire planter l'application. Les connexions incriminées sont affichées en rouge.
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+              <input
+                id="accept-cycle-chk"
+                type="checkbox"
+                checked={acceptUnsupervisedRun}
+                onChange={e => setAcceptUnsupervisedRun(e.target.checked)}
+                style={{ cursor: "pointer" }}
+              />
+              <label htmlFor="accept-cycle-chk" style={{ fontSize: 11, color: "#aaa", cursor: "pointer", userSelect: "none" }}>
+                J'accepte le risque et autorise le lancement
+              </label>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                onClick={() => setShowCycleModal(false)}
+                style={{
+                  background: "transparent", border: "0.5px solid #2a2a2e",
+                  borderRadius: 6, padding: "6px 14px", color: "#bbb",
+                  fontSize: 11, cursor: "pointer"
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => {
+                  if (acceptUnsupervisedRun) {
+                    setShowCycleModal(false);
+                    runSequence().catch(() => {});
+                  }
+                }}
+                disabled={!acceptUnsupervisedRun}
+                style={{
+                  background: acceptUnsupervisedRun ? "#E24B4A" : "#222",
+                  border: "none", borderRadius: 6, padding: "6px 14px",
+                  color: acceptUnsupervisedRun ? "#fff" : "#555",
+                  fontSize: 11, cursor: acceptUnsupervisedRun ? "pointer" : "not-allowed"
+                }}
+              >
+                Lancer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

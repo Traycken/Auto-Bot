@@ -6,7 +6,7 @@ interface Props {
 }
 
 function entryBlock(entry: CmdLogEntry, i: number) {
-  const hasErr = entry.stderr.trim().length > 0;
+  const isFailed = entry.exit_code !== null && entry.exit_code !== 0;
   const asyncRun = entry.async === true;
   return (
     <div key={i} style={{
@@ -15,7 +15,7 @@ function entryBlock(entry: CmdLogEntry, i: number) {
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <span style={{ fontSize: 10, color: "#64748B" }}>{entry.timestamp}</span>
-        <span style={{ fontSize: 10, color: asyncRun ? "#378ADD" : hasErr ? "#E24B4A" : "#22C55E" }}>
+        <span style={{ fontSize: 10, color: asyncRun ? "#378ADD" : isFailed ? "#E24B4A" : "#22C55E" }}>
           {asyncRun ? "async" : `exit ${entry.exit_code ?? "?"}`}
         </span>
       </div>
@@ -28,7 +28,7 @@ function entryBlock(entry: CmdLogEntry, i: number) {
         </pre>
       )}
       {entry.stderr && (
-        <pre style={{ fontSize: 10, color: "#E24B4A", margin: "6px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        <pre style={{ fontSize: 10, color: isFailed ? "#E24B4A" : "#888", margin: "6px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {entry.stderr}
         </pre>
       )}

@@ -1,10 +1,14 @@
 import { useEditorStore } from "../store/editorStore";
 
-export function Toolbar() {
+interface ToolbarProps {
+  handleRun?: () => void;
+}
+
+export function Toolbar({ handleRun }: ToolbarProps) {
   const {
     tabs, activeTabId,
     status, runSequence, stopSequence,
-    saveActiveTab, openSequence,
+    saveActiveTab, openAny,
   } = useEditorStore();
 
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -65,7 +69,7 @@ export function Toolbar() {
 
       {/* Run / Stop — only for main tabs */}
       {isMain ? btn(
-        () => { isRunning ? stopSequence() : runSequence(); },
+        () => { isRunning ? stopSequence() : (handleRun ? handleRun() : runSequence()); },
         isRunning ? "ti-player-stop" : "ti-player-play",
         isRunning ? "Stop" : "Exécuter",
         isEmpty && !isRunning,
@@ -81,7 +85,7 @@ export function Toolbar() {
       <div style={{ width:"0.5px", height:18, background:"#2a2a2e", margin:"0 2px" }} />
 
       {btn(() => saveActiveTab(), "ti-device-floppy", "Sauver", false, false, "Ctrl+S")}
-      {btn(() => openSequence(), "ti-folder-open", "Ouvrir")}
+      {btn(() => openAny(), "ti-folder-open", "Ouvrir")}
 
       <div style={{ flex: 1 }} />
 

@@ -18,6 +18,7 @@ interface Props {
   capture?: boolean;
   multiline?: boolean;
   onCaptureY?: (y: number) => void;
+  disabled?: boolean;
 }
 
 // ── Expression evaluator (frontend preview only) ──────────────────────────────
@@ -55,7 +56,7 @@ const FN_SNIPPETS = [
   { label: "floor(val,digits)",     insert: "floor(%myVar,0)",          desc: "arrondi inférieur" },
 ];
 
-export function SmartInput({ label, value, onChange, placeholder, capture, multiline, onCaptureY }: Props) {
+export function SmartInput({ label, value, onChange, placeholder, capture, multiline, onCaptureY, disabled }: Props) {
   const { variables } = useEditorStore();
   const varsMap = Object.fromEntries(variables.map((v) => [v.name, v.value]));
 
@@ -128,11 +129,12 @@ export function SmartInput({ label, value, onChange, placeholder, capture, multi
     width: "100%", padding: "4px 8px",
     paddingRight: capture ? 28 : preview ? 50 : 8,
     fontSize: 11, fontFamily: "monospace",
-    background: capturing ? "#0d1f14" : focused ? "#161618" : "#111113",
+    background: disabled ? "#0c0c0e" : capturing ? "#0d1f14" : focused ? "#161618" : "#111113",
     border: `0.5px solid ${capturing ? "#22C55E" : focused ? "#3a3a3e" : "#2a2a2e"}`,
-    borderRadius: 5, color: "#d0d0d0", outline: "none",
+    borderRadius: 5, color: disabled ? "#666" : "#d0d0d0", outline: "none",
     resize: multiline ? "vertical" as const : "none" as const,
     boxSizing: "border-box" as const,
+    cursor: disabled ? "not-allowed" : "text",
   };
 
   return (
@@ -151,14 +153,14 @@ export function SmartInput({ label, value, onChange, placeholder, capture, multi
             onFocus={() => setFocused(true)}
             onBlur={() => { setFocused(false); setTimeout(() => setShowSuggest(false), 150); }}
             placeholder={placeholder ?? "valeur, %variable, ou random(...)"}
-            rows={3} style={inputStyle} />
+            rows={3} style={inputStyle} disabled={disabled} />
         ) : (
           <input ref={inputRef as React.Ref<HTMLInputElement>} type="text" value={value}
             onChange={e => handleChange(e.target.value)} onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => { setFocused(false); setTimeout(() => setShowSuggest(false), 150); }}
             placeholder={placeholder ?? "valeur, %variable, ou random(...)"}
-            style={inputStyle} />
+            style={inputStyle} disabled={disabled} />
         )}
 
         {/* Preview */}

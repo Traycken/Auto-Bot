@@ -26,11 +26,33 @@ export interface TypeTextBlock  { kind: "type_text";  text: string; delay_betwee
 // ── Flow ──────────────────────────────────────────────────────────────────────
 
 export interface WaitBlock         { kind: "wait";         duration_ms: string; }
-export interface ForLoopBlock      { kind: "for_loop";     var_name: string; from: string; to: string; step: string; }
+export interface ForLoopBlock      { kind: "for_loop";     var_name: string; from: string; to: string; step: string; infinite?: boolean; }
 export interface IfBlock           { kind: "if";           condition: string; }
 export interface SetVariableBlock  { kind: "set_variable"; name: string; value: string; vars?: { name: string; value: string }[]; }
 export interface MathBlock         { kind: "math";         target_var: string; expression: string; }
 export interface StartBlock        { kind: "start"; }
+
+export interface IterationsBlock {
+  kind: "iterations";
+  count: string;
+  infinite?: boolean;
+}
+
+export interface ForEachBlock {
+  kind: "foreach";
+  collection_var: string;
+}
+
+export interface SwitchBlock {
+  kind: "switch";
+  expression: string;
+  cases: string[];
+}
+
+export interface ConsoleBlock {
+  kind: "console";
+  text: string;
+}
 
 // ── Function graph special nodes ──────────────────────────────────────────────
 
@@ -170,6 +192,28 @@ export interface PythonBlock {
   python_version: string;
   globals: PythonGlobal[];
   output_var: string;
+  interpreter_mode?: "uv" | "manual";
+  python_path?: string;
+  pip_path?: string;
+  python_env_dir?: string;
+  python_env_name?: string;
+}
+
+export interface IaBlock {
+  kind: "ia";
+  mode: "text" | "image";
+  prompt: string;
+  api_mode: "local" | "external";
+  api_key: string;
+  model_name: string;
+  output_var: string;
+}
+
+export interface VpoBlock {
+  kind: "vpo";
+  class_name: string;
+  threshold: string;
+  output_var: string;
 }
 
 // ── Union ─────────────────────────────────────────────────────────────────────
@@ -185,7 +229,9 @@ export type Block =
   | FunctionCallBlock
   | ArrayPushBlock | ArrayMergeBlock | ArrayGetBlock | ArraySearchBlock | ArrayDeleteBlock
   | DictAddBlock | DictCombineBlock | DictFindBlock | DictRemoveBlock
-  | CmdBlock | PythonBlock;
+  | CmdBlock | PythonBlock
+  | IterationsBlock | ForEachBlock | SwitchBlock | ConsoleBlock
+  | IaBlock | VpoBlock;
 
 export type BlockKind = Block["kind"];
 
@@ -194,7 +240,7 @@ export type BlockKind = Block["kind"];
 export interface BlockMeta {
   kind: BlockKind;
   label: string;
-  category: "special" | "mouse" | "keyboard" | "flow" | "vision" | "logic" | "function" | "array" | "dict" | "system";
+  category: "special" | "mouse" | "keyboard" | "flow" | "vision" | "logic" | "function" | "array" | "dict" | "system" | "collection";
   color: string;
   icon: string;
   defaultData: Omit<Block, "kind">;
@@ -227,7 +273,11 @@ export const BLOCK_CATALOG: BlockMeta[] = [
   { kind: "wait",         label: "Attendre",          category: "flow", color: "#7F77DD", icon: "ti-clock-pause",
     defaultData: { duration_ms:"1000" } },
   { kind: "for_loop",     label: "Boucle FOR",         category: "flow", color: "#7F77DD", icon: "ti-arrows-right-left",
-    defaultData: { var_name:"i", from:"0", to:"10", step:"1" } },
+    defaultData: { var_name:"i", from:"0", to:"10", step:"1", infinite: false } },
+  { kind: "iterations",   label: "Itérations",         category: "flow", color: "#7F77DD", icon: "ti-repeat",
+    defaultData: { count: "10", infinite: false } },
+  { kind: "foreach",      label: "ForEach",           category: "flow", color: "#7F77DD", icon: "ti-rotate-clockwise",
+    defaultData: { collection_var: "myArray" } },
   { kind: "math",         label: "Math",               category: "flow", color: "#7F77DD", icon: "ti-calculator",
     defaultData: { target_var:"result", expression:"%i * 2" } },
   { kind: "set_variable", label: "Variable (locale)",  category: "flow", color: "#7F77DD", icon: "ti-variable",
@@ -238,6 +288,8 @@ export const BLOCK_CATALOG: BlockMeta[] = [
   // ── Logic ─────────────────────────────────────────────────────────────────
   { kind: "if", label: "Si (If)", category: "logic", color: "#EF9F27", icon: "ti-git-branch",
     defaultData: { condition:"%myVar > 0" } },
+  { kind: "switch", label: "Switch", category: "logic", color: "#EF9F27", icon: "ti-git-commit",
+    defaultData: { expression: "%myVar", cases: ["1", "2"] } },
 
   // ── Vision ────────────────────────────────────────────────────────────────
   { kind: "pixel_color",  label: "Couleur pixel",     category: "vision", color: "#1D9E75", icon: "ti-color-picker",
@@ -252,31 +304,45 @@ export const BLOCK_CATALOG: BlockMeta[] = [
     defaultData: { array_var:"myArray", values:"", position:"back" as const, unique:false } },
   { kind: "array_merge",  label: "Merge Arrays",  category: "array", color: "#0EA5E9", icon: "ti-arrows-join",
     defaultData: { array_vars:"arr1,arr2", output_var:"merged" } },
-  { kind: "array_get",    label: "Get Index",     category: "array", color: "#0EA5E9", icon: "ti-list-search",
-    defaultData: { array_var:"myArray", index:"0", output_var:"item" } },
   { kind: "array_search", label: "Chercher",      category: "array", color: "#0EA5E9", icon: "ti-search",
     defaultData: { array_var:"myArray", values:"", mode:"first" as const, output_var:"idx" } },
-  { kind: "array_delete", label: "Suppr. Index",  category: "array", color: "#0EA5E9", icon: "ti-list-minus",
-    defaultData: { array_var:"myArray", index:"0" } },
 
   // ── Dict ──────────────────────────────────────────────────────────────────
   { kind: "dict_add",     label: "Add Dict",      category: "dict", color: "#F59E0B", icon: "ti-table-plus",
     defaultData: { dict_var:"myDict", pairs:[{ key:"", value:"" }] } },
   { kind: "dict_combine", label: "Combine Dicts", category: "dict", color: "#F59E0B", icon: "ti-layers-union",
     defaultData: { dict_vars:"dict1,dict2", output_var:"combined" } },
-  { kind: "dict_find",    label: "Find Key",      category: "dict", color: "#F59E0B", icon: "ti-table-search",
-    defaultData: { dict_var:"myDict", key:"", output_var:"value" } },
   { kind: "dict_remove",  label: "Remove Key",    category: "dict", color: "#F59E0B", icon: "ti-table-minus",
     defaultData: { dict_var:"myDict", key:"" } },
+
+  // ── Collection (Wave 6 Redefined category) ────────────────────────────────
+  { kind: "array_get",    label: "Get Index",     category: "collection", color: "#8B5CF6", icon: "ti-list-search",
+    defaultData: { array_var:"myArray", index:"0", output_var:"item" } },
+  { kind: "array_delete", label: "Suppr. Index",  category: "collection", color: "#8B5CF6", icon: "ti-trash-x",
+    defaultData: { array_var:"myArray", index:"0" } },
+  { kind: "dict_find",    label: "Find Key",      category: "collection", color: "#8B5CF6", icon: "ti-key",
+    defaultData: { dict_var:"myDict", key:"", output_var:"value" } },
 
   // ── System ────────────────────────────────────────────────────────────────
   { kind: "cmd", label: "CMD", category: "system", color: "#64748B", icon: "ti-terminal-2",
     defaultData: { command:"", output_var:"CMDReturn", wait:true, administrator:false, echo:false } },
   { kind: "python", label: "Python", category: "system", color: "#3776AB", icon: "ti-brand-python",
-    defaultData: { script:"print('Hello from Python')", requirements:"", python_version:"3.12", globals:[], output_var:"PythonReturn" } },
+    defaultData: { script:"print('Hello from Python')", requirements:"", python_version:"3.12", globals:[], output_var:"PythonReturn", interpreter_mode: "uv", python_path: "", pip_path: "", python_env_dir: "", python_env_name: "" } },
+  { kind: "console", label: "Console", category: "system", color: "#64748B", icon: "ti-terminal",
+    defaultData: { text: "Log message: %myVar" } },
+  { kind: "ia", label: "IA (AI Inférence)", category: "system", color: "#3B82F6", icon: "ti-brain",
+    defaultData: { mode: "text", prompt: "Explain %myVar", api_mode: "external", api_key: "", model_name: "gpt-4o", output_var: "response" } },
+  { kind: "vpo", label: "VPO (YOLO Vision)", category: "system", color: "#10B981", icon: "ti-eye",
+    defaultData: { class_name: "person", threshold: "0.5", output_var: "vpoMatch" } },
 
   // ── Function ──────────────────────────────────────────────────────────────
   { kind: "function_call", label: "Appel Fonction", category: "function", color: "#A855F7", icon: "ti-function",
     mainOnly: false,
     defaultData: { function_name:"", call_args:[], return_var:"" } },
+
+  // ── Detached Console Node ──────────────────────────────────────────────────
+  { kind: "history" as any, label: "Console Déportée", category: "system", color: "#64748B", icon: "ti-terminal-2",
+    paletteHidden: true,
+    defaultData: { targetNodeId: "", targetNodeLabel: "" } },
 ];
+

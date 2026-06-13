@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
+import { useNodeWidth } from "../store/editorStore";
+
 interface FunctionCallData {
   function_name: string;
   call_args: { name: string; value: string }[];
@@ -8,10 +10,10 @@ interface FunctionCallData {
   [key: string]: unknown;
 }
 
-const NODE_W = 200;
 const C = "#A855F7";
 
 export const FunctionCallNode = memo(function FunctionCallNode({ data, selected }: NodeProps) {
+  const NODE_W = useNodeWidth();
   const d = data as FunctionCallData;
   const args = d.call_args ?? [];
   const retVar = d.return_var || (d.function_name ? `${d.function_name}_Return` : "Return");
@@ -35,9 +37,24 @@ export const FunctionCallNode = memo(function FunctionCallNode({ data, selected 
           <i className="ti ti-function" style={{ fontSize:11, color:"#fff" }} />
         </div>
         <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>
-          {d.function_name || <span style={{ color:"#3a2a4e", fontStyle:"italic" }}>choisir…</span>}
+          {d.function_name ? `${d.function_name}${d.alias ? ` (${d.alias})` : ""}` : <span style={{ color:"#3a2a4e", fontStyle:"italic" }}>choisir…</span>}
         </span>
-        <span style={{ fontSize:9, color:C, background:`${C}22`, padding:"1px 5px", borderRadius:4, flexShrink:0 }}>fn</span>
+        <span style={{ fontSize:9, color:C, background:`${C}22`, padding:"1px 5px", borderRadius:4, flexShrink:0, marginRight:4 }}>fn</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "function_call" } }));
+          }}
+          title="Aide sur ce bloc"
+          style={{
+            width:16, height:16, borderRadius:4, background:"transparent",
+            border:"0.5px solid #3a2a4e", cursor:"pointer", display:"flex",
+            alignItems:"center", justifyContent:"center", padding:0, flexShrink:0,
+            color:"#666", fontSize:9, lineHeight:1, fontFamily:"monospace",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#666")}
+        >?</button>
       </div>
 
       {/* Args summary */}

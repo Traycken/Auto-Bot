@@ -213,6 +213,7 @@ fn template_score_at(search:&image::RgbaImage, template:&image::RgbaImage, sx:u3
     if count>0.0 { score/count } else { 0.0 }
 }
 
+#[allow(dead_code)]
 fn region_contains_template(search:&image::RgbaImage, template:&image::RgbaImage, threshold:f64) -> bool {
     region_find_first_template(search, template, threshold).is_some()
 }
@@ -317,9 +318,21 @@ pub async fn is_app_elevated() -> Result<bool, String> {
 // ── Application settings & Tesseract detection ────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PythonEnvSetting {
+    pub name: String,
+    pub dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     #[serde(default)]
     pub tesseract_path: Option<String>,
+    #[serde(default)]
+    pub shortcuts: Vec<crate::engine::ShortcutSetting>,
+    #[serde(default)]
+    pub python_envs: Vec<PythonEnvSetting>,
+    #[serde(default)]
+    pub edge_thickness: Option<u32>,
 }
 
 fn get_settings_file_path() -> Result<std::path::PathBuf, String> {
@@ -332,17 +345,26 @@ fn get_settings_file_path() -> Result<std::path::PathBuf, String> {
 pub async fn get_settings() -> Result<AppSettings, String> {
     let path = get_settings_file_path()?;
     if !path.exists() {
-        // Return default settings, possibly auto-detecting Tesseract
         let default_tess = auto_detect_tesseract();
-        return Ok(AppSettings { tesseract_path: default_tess });
+        return Ok(AppSettings {
+            tesseract_path: default_tess,
+            shortcuts: vec![],
+            python_envs: vec![],
+            edge_thickness: Some(4),
+        });
     }
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
+    let settings: AppSettings = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+    // Automatically register loaded shortcuts into the engine
+    crate::engine::update_global_shortcuts(&settings.shortcuts);
+    Ok(settings)
 }
 
 #[tauri::command]
 pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
     let path = get_settings_file_path()?;
+    // Update active global shortcuts in the engine
+    crate::engine::update_global_shortcuts(&settings.shortcuts);
     let data = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&path, data).map_err(|e| e.to_string())
 }
@@ -377,4 +399,154 @@ fn auto_detect_tesseract() -> Option<String> {
         }
     }
     None
+}
+
+#[tauri::command]
+pub async fn load_translations(lang: String) -> Result<std::collections::HashMap<String, String>, String> {
+    let mut dir = std::env::current_dir().unwrap_or_default().join("Localization");
+    if !dir.exists() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let check = parent.join("Localization");
+                if check.exists() {
+                    dir = check;
+                }
+            }
+        }
+    }
+    
+    // Create Localization directory if it doesn't exist to make sure we don't crash
+    let _ = std::fs::create_dir_all(&dir);
+
+    // Load EN_en.json (Master & Failsafe)
+    let en_path = dir.join("EN_en.json");
+    if !en_path.exists() {
+        // Create a basic one if missing
+        let default_en = r#"{
+  "_metadata": {
+    "comment": "Master translation guide",
+    "instructions": "Keep keys, translate values"
+  },
+  "app.title": "Auto-Bot Automation Editor"
+}"#;
+        let _ = std::fs::write(&en_path, default_en);
+    }
+
+    let en_content = std::fs::read_to_string(&en_path).map_err(|e| e.to_string())?;
+    let raw_val: serde_json::Value = serde_json::from_str(&en_content).map_err(|e| e.to_string())?;
+    let mut map = std::collections::HashMap::new();
+    if let serde_json::Value::Object(obj) = raw_val {
+        for (k, v) in obj {
+            if let serde_json::Value::String(s) = v {
+                map.insert(k, s);
+            }
+        }
+    }
+
+    if lang.to_lowercase().starts_with("en") {
+        return Ok(map);
+    }
+
+    // Active lang file
+    let active_filename = if lang.to_lowercase().starts_with("fr") {
+        "FR_fr.json"
+    } else {
+        &format!("{lang}.json")
+    };
+    let active_path = dir.join(active_filename);
+    if active_path.exists() {
+        if let Ok(active_content) = std::fs::read_to_string(&active_path) {
+            if let Ok(raw_act) = serde_json::from_str::<serde_json::Value>(&active_content) {
+                if let serde_json::Value::Object(obj) = raw_act {
+                    for (k, v) in obj {
+                        if let serde_json::Value::String(s) = v {
+                            map.insert(k, s);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(map)
+}#[tauri::command]
+pub async fn test_pixel_color(x: i32, y: i32, screen: i32, expected_hex: String, tolerance: u8) -> Result<bool, String> {
+    let expected = u32::from_str_radix(expected_hex.trim_start_matches('#'), 16)
+        .map_err(|e| format!("Hex color invalide: {e}"))?;
+    Ok(sample_pixel_color(x, y, screen, expected, tolerance))
+}
+
+#[tauri::command]
+pub async fn test_image_match(template_b64: String, x: i32, y: i32, w: u32, h: u32, screen: i32, threshold: String) -> Result<bool, String> {
+    let thresh = threshold.parse::<f64>().unwrap_or(0.9);
+    let res = match_image_region(&template_b64, x, y, w, h, screen, thresh, "first")?;
+    Ok(res.matched)
+}
+
+#[tauri::command]
+pub async fn test_ocr(x: i32, y: i32, w: u32, h: u32, screen: i32, lang: String, match_text: String) -> Result<bool, String> {
+    use std::process::Command;
+    let cropped = crate::engine::capture_image_for_ocr(x, y, w, h, screen)
+        .map_err(|e| e.to_string())?;
+    let temp_dir = std::env::temp_dir();
+    let temp_img_path = temp_dir.join("autobot_ocr_test.png");
+    cropped.save(&temp_img_path).map_err(|e| e.to_string())?;
+
+    let tesseract_exe = get_tesseract_path()
+        .ok_or_else(|| "Tesseract exe non trouvé".to_string())?;
+    
+    #[cfg(target_os = "windows")]
+    let output = {
+        use std::os::windows::process::CommandExt;
+        Command::new(&tesseract_exe)
+            .arg(&temp_img_path)
+            .arg("stdout")
+            .arg("-l")
+            .arg(&lang)
+            .creation_flags(0x08000000)
+            .output()
+    };
+    #[cfg(not(target_os = "windows"))]
+    let output = Command::new(&tesseract_exe)
+        .arg(&temp_img_path)
+        .arg("stdout")
+        .arg("-l")
+        .arg(&lang)
+        .output();
+
+    let _ = std::fs::remove_file(&temp_img_path);
+    let out = output.map_err(|e| e.to_string())?;
+    let stdout_text = String::from_utf8_lossy(&out.stdout).to_string();
+    
+    Ok(stdout_text.to_lowercase().contains(&match_text.to_lowercase()))
+}
+
+// Helper function to fetch tesseract path inside this module
+fn get_tesseract_path() -> Option<String> {
+    if let Some(p) = auto_detect_tesseract() {
+        return Some(p);
+    }
+    // settings check fallback
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let path = dir.join("settings.json");
+    if path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            #[derive(serde::Deserialize)]
+            struct SimpleSettings { tesseract_path: Option<String> }
+            if let Ok(settings) = serde_json::from_str::<SimpleSettings>(&data) {
+                if let Some(ref p) = settings.tesseract_path {
+                    if !p.trim().is_empty() && std::path::Path::new(p).exists() {
+                        return Some(p.clone());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[command]
+pub async fn set_webview_zoom(webview: tauri::Webview, factor: f64) -> Result<(), String> {
+    webview.set_zoom(factor).map_err(|e| e.to_string())
 }

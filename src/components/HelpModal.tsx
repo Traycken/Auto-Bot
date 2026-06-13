@@ -54,13 +54,30 @@ const HELP_DOCS: Record<string, BlockDoc> = {
   },
   wait: {
     label: "Attendre", color: "#7F77DD", icon: "ti-clock-pause", category: "Contrôle",
-    description: "Met la séquence en pause pendant la durée spécifiée.",
-    inputs: ["Durée (ms) — temps d'attente en millisecondes"],
+    description: "Met la séquence en pause pendant la durée spécifiée ou jusqu'à une heure fixe.",
+    inputs: [
+      "Mode d'attente — Durée (ms) ou Heures/Minutes spécifiées (Format: HH:MM:SS ou DD/MM/YYYY HH:MM:SS)",
+      "Durée (ms) — temps d'attente en millisecondes (ex: 2000)",
+      "Cible Date & Heure — Date et/ou heure de réveil de la pause"
+    ],
+  },
+  iterations: {
+    label: "Itérations", color: "#7F77DD", icon: "ti-repeat", category: "Contrôle",
+    description: "Répète les instructions enfants un nombre défini de fois, ou indéfiniment en mode infini.",
+    inputs: ["Nombre d'itérations — nombre entier de répétitions", "Mode Infini — boucle perpétuelle"],
+    outputs: ["▶ Corps — chemin vers les blocs de boucle"],
+  },
+  foreach: {
+    label: "ForEach", color: "#7F77DD", icon: "ti-rotate-clockwise", category: "Contrôle",
+    description: "Parcourt les éléments d'un tableau ou d'un dictionnaire.",
+    inputs: ["Nom de la collection — variable contenant le tableau/dictionnaire"],
+    outputs: ["▶ Corps — blocs exécutés à chaque élément"],
+    notes: ["Met à disposition les variables contextuelles %x (valeur), %foreachindex, %key et %value"],
   },
   for_loop: {
     label: "Boucle FOR", color: "#7F77DD", icon: "ti-arrows-right-left", category: "Contrôle",
     description: "Répète un bloc d'instructions un nombre de fois défini par une plage de valeurs.",
-    inputs: ["Variable de boucle — nom de la variable compteur", "De — valeur de départ", "À — valeur finale", "Pas — incrément"],
+    inputs: ["Variable de boucle — nom de la variable compteur", "De — valeur de départ", "À — valeur finale ou ∞", "Pas — incrément", "Mode Infini — boucle perpétuelle sans valeur finale"],
     outputs: ["▶ Corps — blocs à répéter à l'intérieur de la boucle", "↩ Retour — fin d'une itération (reboucle)", "⏏ Break — sortie anticipée de la boucle", "→ Suite — bloc suivant après la boucle"],
     expressions: ["La variable de boucle (ex: %i) est accessible dans les blocs enfants"],
   },
@@ -128,7 +145,7 @@ const HELP_DOCS: Record<string, BlockDoc> = {
     inputs: ["Arrays — noms de variables séparés par virgule", "Var. sortie — tableau résultant de la fusion"],
   },
   array_get: {
-    label: "Get Index", color: "#0EA5E9", icon: "ti-list-search", category: "Array",
+    label: "Get Index", color: "#8B5CF6", icon: "ti-list-search", category: "Collection",
     description: "Récupère la valeur à un index précis dans un tableau.",
     inputs: ["Array — variable tableau", "Index — position (commence à 0)", "Var. sortie — valeur extraite"],
   },
@@ -138,7 +155,7 @@ const HELP_DOCS: Record<string, BlockDoc> = {
     inputs: ["Array — variable tableau", "Valeurs — valeurs à chercher", "Mode — premier trouvé (INT), dernier trouvé (INT), ou tous (ARRAY)"],
   },
   array_delete: {
-    label: "Suppr. Index", color: "#0EA5E9", icon: "ti-list-minus", category: "Array",
+    label: "Suppr. Index", color: "#8B5CF6", icon: "ti-trash-x", category: "Collection",
     description: "Supprime l'élément à l'index spécifié d'un tableau.",
     inputs: ["Array — variable tableau", "Index — position à supprimer"],
   },
@@ -154,7 +171,7 @@ const HELP_DOCS: Record<string, BlockDoc> = {
     inputs: ["Dicts — noms de variables séparés par virgule", "Var. sortie — dictionnaire résultat"],
   },
   dict_find: {
-    label: "Find Key", color: "#F59E0B", icon: "ti-table-search", category: "Dict",
+    label: "Find Key", color: "#8B5CF6", icon: "ti-key", category: "Collection",
     description: "Recherche la valeur associée à une clé dans un dictionnaire.",
     inputs: ["Dict — variable dictionnaire", "Clé — la clé à rechercher", "Var. sortie — valeur trouvée"],
   },
@@ -162,6 +179,43 @@ const HELP_DOCS: Record<string, BlockDoc> = {
     label: "Remove Key", color: "#F59E0B", icon: "ti-table-minus", category: "Dict",
     description: "Supprime une entrée d'un dictionnaire par sa clé.",
     inputs: ["Dict — variable dictionnaire", "Clé — la clé à supprimer"],
+  },
+  switch: {
+    label: "Switch", color: "#EF9F27", icon: "ti-git-commit", category: "Logique",
+    description: "Compare une expression avec plusieurs cas. Dirige le flux vers le port correspondant au premier cas valide, ou 'défaut' sinon.",
+    inputs: ["Expression — la valeur ou variable à tester (ex: %maVar)"],
+    outputs: ["Cas X — port correspondant au cas X", "défaut — port emprunté si aucun cas ne correspond"],
+  },
+  python: {
+    label: "Python", color: "#3776AB", icon: "ti-brand-python", category: "Système",
+    description: "Exécute un script Python natif via l'interpréteur système ou avec le gestionnaire rapide 'uv'.",
+    inputs: ["Script — code Python à exécuter", "Requirements — librairies à installer (mode uv)", "Version Python — ex: 3.12", "Var. de sortie — reçoit le résultat (stdout ou variable)"],
+    notes: ["Le mode uv télécharge automatiquement les dépendances de façon isolée et rapide."],
+  },
+  console: {
+    label: "Console", color: "#64748B", icon: "ti-terminal", category: "Système",
+    description: "Affiche un message de log formaté dans la console unifiée de l'application.",
+    inputs: ["Texte — message à logger (supporte les variables comme %maVar)"],
+  },
+  ia: {
+    label: "IA Inférence", color: "#3B82F6", icon: "ti-brain", category: "Système",
+    description: "Exécute une requête d'intelligence artificielle en texte (LLM) ou vision (VLM) locale ou distante.",
+    inputs: ["Mode — Texte ou Image/Vision", "Prompt — instructions et contexte", "Source — API externe ou Ollama local", "Modèle — ex: gpt-4o", "Var. de sortie — reçoit le texte généré"],
+  },
+  vpo: {
+    label: "VPO (YOLO)", color: "#10B981", icon: "ti-eye", category: "Système",
+    description: "Détecte des objets en temps réel à l'écran via un modèle de vision YOLO.",
+    inputs: ["Classe — objet à chercher (person, car, ...)", "Seuil — confiance minimale (0.1–1.0)", "Var. de sortie — reçoit la boîte de détection (X, Y, L, H)"],
+  },
+  function_args: {
+    label: "Arguments", color: "#22C55E", icon: "ti-input-check", category: "Spécial",
+    description: "Définit les arguments reçus en entrée par une fonction.",
+    inputs: ["Arguments — liste des variables d'entrée"],
+  },
+  function_return: {
+    label: "Retour", color: "#EF9F27", icon: "ti-corner-up-left", category: "Spécial",
+    description: "Définit la valeur retournée à la fin de l'exécution d'une fonction.",
+    inputs: ["Valeur — expression ou variable renvoyée (ex: %resultat)"],
   },
   cmd: {
     label: "CMD", color: "#64748B", icon: "ti-terminal-2", category: "Système",

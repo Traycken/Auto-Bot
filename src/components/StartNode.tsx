@@ -1,9 +1,10 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-const NODE_W = 180;
+import { useNodeWidth } from "../store/editorStore";
 
 export const StartNode = memo(function StartNode() {
+  const NODE_W = useNodeWidth();
   return (
     <div style={{
       width: NODE_W,
@@ -25,12 +26,32 @@ export const StartNode = memo(function StartNode() {
       <i className="ti ti-player-play" style={{ fontSize: 14 }} />
       <span style={{ fontWeight: 600, letterSpacing: "0.06em" }}>DÉPART</span>
       {/* Lock icon — visual hint that this node cannot be deleted */}
-      <span title="Nœud unique — non supprimable" style={{
+      {/* Lock and Help icons */}
+      <div style={{
         position: "absolute", top: 4, right: 6,
-        fontSize: 8, color: "#22C55E55",
+        display: "flex", gap: 4, alignItems: "center"
       }}>
-        <i className="ti ti-lock" />
-      </span>
+        <span title="Nœud unique — non supprimable" style={{
+          fontSize: 8, color: "#22C55E55",
+        }}>
+          <i className="ti ti-lock" />
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "start" } }));
+          }}
+          title="Aide sur ce bloc"
+          style={{
+            width:12, height:12, borderRadius:3, background:"transparent",
+            border:"none", cursor:"pointer", display:"flex",
+            alignItems:"center", justifyContent:"center", padding:0,
+            color:"#22C55E88", fontSize:8, lineHeight:1, fontFamily:"monospace",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#22C55E")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#22C55E88")}
+        >?</button>
+      </div>
       <Handle
         type="source"
         position={Position.Bottom}
