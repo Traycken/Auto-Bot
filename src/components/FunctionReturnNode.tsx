@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import { useNodeWidth } from "../store/editorStore";
+import { useNodeWidth, t } from "../store/editorStore";
 
 interface FunctionReturnData { value: string; [key: string]: unknown; }
 
@@ -38,14 +38,14 @@ export const FunctionReturnNode = memo(function FunctionReturnNode({ data, selec
         <div style={{ width:20, height:20, borderRadius:5, background:C, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
           <i className="ti ti-corner-up-left" style={{ fontSize:11, color:"#fff" }} />
         </div>
-        <span style={{ fontWeight:600, color:C, fontSize:11, letterSpacing:"0.06em" }}>RETOUR</span>
-        <span style={{ marginLeft:"auto", fontSize:9, color:`${C}99`, background:`${C}18`, padding:"1px 6px", borderRadius:4, marginRight:4 }}>sortie</span>
+        <span style={{ fontWeight:600, color:C, fontSize:11, letterSpacing:"0.06em" }}>{t("node.function_return", "RETOUR")}</span>
+        <span style={{ marginLeft:"auto", fontSize:9, color:`${C}99`, background:`${C}18`, padding:"1px 6px", borderRadius:4, marginRight:4 }}>{t("node.function_return.output", "sortie")}</span>
         <button
           onClick={(e) => {
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "function_return" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:16, height:16, borderRadius:4, background:"transparent",
             border:"0.5px solid #4a3a10", cursor:"pointer", display:"flex",
@@ -60,8 +60,8 @@ export const FunctionReturnNode = memo(function FunctionReturnNode({ data, selec
       {/* Value preview */}
       <div style={{ padding:"7px 10px 10px", fontSize:10, minHeight:28 }}>
         {d.value
-          ? <><span style={{ color:"#555", fontSize:9 }}>return </span>{renderExpr(d.value)}</>
-          : <span style={{ color:"#4a3a10", fontStyle:"italic" }}>valeur non définie</span>
+          ? <><span style={{ color:"#555", fontSize:9 }}>{t("node.function_return.return", "return ")}</span>{renderExpr(d.value)}</>
+          : <span style={{ color:"#4a3a10", fontStyle:"italic" }}>{t("node.function_return.undefined", "valeur non définie")}</span>
         }
       </div>
     </div>

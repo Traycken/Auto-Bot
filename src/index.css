@@ -18,3 +18,12 @@ button:focus-visible { outline: 1.5px solid #E84C1E; outline-offset: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3a3e; }
 .react-flow__renderer { background: transparent !important; }
 .react-flow__pane { cursor: default; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1.5s linear infinite;
+}
+

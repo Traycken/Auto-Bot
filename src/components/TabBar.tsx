@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useEditorStore } from "../store/editorStore";
+import { useEditorStore, t } from "../store/editorStore";
 
 export function TabBar() {
   const {
@@ -100,7 +100,7 @@ export function TabBar() {
             ) : (
               <span
                 onDoubleClick={e => startRename(tab.id, tab.name, e)}
-                title={`Double-clic pour renommer${tab.filePath ? ` · ${tab.filePath}` : ""}`}
+                title={`${t("tab.double_click_rename", "Double-clic pour renommer")}${tab.filePath ? ` · ${tab.filePath}` : ""}`}
                 style={{
                   flex: 1, minWidth: 0,
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -120,7 +120,7 @@ export function TabBar() {
               <>
                 <button
                   onClick={e => startRename(tab.id, tab.name, e)}
-                  title="Renommer l'onglet"
+                  title={t("tab.rename", "Renommer l'onglet")}
                   style={{ background: "none", border: "none", cursor: "pointer", color: "#444", padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center" }}
                   onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
                   onMouseLeave={e => (e.currentTarget.style.color = "#444")}
@@ -129,7 +129,7 @@ export function TabBar() {
                 </button>
                 <button
                   onClick={e => { e.stopPropagation(); saveActiveTab(); }}
-                  title="Sauvegarder (Ctrl+S)"
+                  title={t("tab.save", "Sauvegarder (Ctrl+S)")}
                   style={{ background: "none", border: "none", cursor: "pointer", color: "#444", padding: "0 2px", flexShrink: 0, display: "flex", alignItems: "center" }}
                   onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
                   onMouseLeave={e => (e.currentTarget.style.color = "#444")}
@@ -142,7 +142,7 @@ export function TabBar() {
             {tabs.length > 1 && (
               <button
                 onClick={e => { e.stopPropagation(); closeTab(tab.id); }}
-                title="Fermer"
+                title={t("tab.close", "Fermer")}
                 style={{ background: "none", border: "none", cursor: "pointer", color: "#444", padding: "0 2px", flexShrink: 0, fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center" }}
                 onMouseEnter={e => (e.currentTarget.style.color = "#E24B4A")}
                 onMouseLeave={e => (e.currentTarget.style.color = "#444")}
@@ -156,7 +156,7 @@ export function TabBar() {
       <div style={{ position: "relative", flexShrink: 0 }}>
         <button
           onClick={() => setShowModal(true)}
-          title="Nouvel onglet"
+          title={t("tab.new", "Nouvel onglet")}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 34, height: 34,
@@ -187,7 +187,7 @@ export function TabBar() {
             boxShadow: "0 20px 50px rgba(0,0,0,0.6)", fontFamily: "monospace"
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "#fff", fontWeight: "bold" }}>Créer un nouvel onglet</span>
+              <span style={{ fontSize: 13, color: "#fff", fontWeight: "bold" }}>{t("tab.create_new", "Créer un nouvel onglet")}</span>
               <button
                 onClick={() => setShowModal(false)}
                 style={{ background: "none", border: "none", cursor: "pointer", color: "#666", fontSize: 18 }}
@@ -217,8 +217,8 @@ export function TabBar() {
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#E84C1E15", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <i className="ti ti-layout-board" style={{ fontSize: 20, color: "#E84C1E" }} />
                 </div>
-                <span style={{ fontSize: 12, color: "#fff", fontWeight: "bold" }}>Nouvelle Séquence</span>
-                <span style={{ fontSize: 9, color: "#555", textAlign: "center" }}>Scénario macro standard exécuté séquentiellement.</span>
+                <span style={{ fontSize: 12, color: "#fff", fontWeight: "bold" }}>{t("tab.new_sequence", "Nouvelle Séquence")}</span>
+                <span style={{ fontSize: 9, color: "#555", textAlign: "center" }}>{t("tab.new_sequence_desc", "Scénario macro standard exécuté séquentiellement.")}</span>
               </div>
 
               {/* Carte Fonction */}
@@ -238,10 +238,10 @@ export function TabBar() {
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#A855F715", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <i className="ti ti-function" style={{ fontSize: 20, color: "#A855F7" }} />
                 </div>
-                <span style={{ fontSize: 12, color: "#fff", fontWeight: "bold" }}>Nouvelle Fonction</span>
+                <span style={{ fontSize: 12, color: "#fff", fontWeight: "bold" }}>{t("tab.new_function", "Nouvelle Fonction")}</span>
                 
                 <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 8, color: "#555" }}>Nom de fonction :</span>
+                  <span style={{ fontSize: 8, color: "#555" }}>{t("tab.function_name", "Nom de fonction :")}</span>
                   <input
                     type="text"
                     value={funcName}
@@ -263,7 +263,7 @@ export function TabBar() {
                     marginTop: 4
                   }}
                 >
-                  Créer la fonction
+                  {t("tab.create_function", "Créer la fonction")}
                 </button>
               </div>
             </div>

@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 
-import { useNodeWidth } from "../store/editorStore";
+import { useNodeWidth, t } from "../store/editorStore";
 
 export const StartNode = memo(function StartNode() {
   const NODE_W = useNodeWidth();
@@ -24,14 +24,14 @@ export const StartNode = memo(function StartNode() {
       userSelect: "none",
     }}>
       <i className="ti ti-player-play" style={{ fontSize: 14 }} />
-      <span style={{ fontWeight: 600, letterSpacing: "0.06em" }}>DÉPART</span>
+      <span style={{ fontWeight: 600, letterSpacing: "0.06em" }}>{t("node.start", "DÉPART")}</span>
       {/* Lock icon — visual hint that this node cannot be deleted */}
       {/* Lock and Help icons */}
       <div style={{
         position: "absolute", top: 4, right: 6,
         display: "flex", gap: 4, alignItems: "center"
       }}>
-        <span title="Nœud unique — non supprimable" style={{
+        <span title={t("node.start.tooltip", "Nœud unique — non supprimable")} style={{
           fontSize: 8, color: "#22C55E55",
         }}>
           <i className="ti ti-lock" />
@@ -41,7 +41,7 @@ export const StartNode = memo(function StartNode() {
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "start" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:12, height:12, borderRadius:3, background:"transparent",
             border:"none", cursor:"pointer", display:"flex",

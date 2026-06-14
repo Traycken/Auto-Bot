@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useRef, useCallback } from "react";
-import { useEditorStore } from "../store/editorStore";
+import { useEditorStore, t } from "../store/editorStore";
 import { Handle, Position } from "@xyflow/react";
 
 interface HistoryNodeData {
@@ -94,15 +94,15 @@ export const HistoryNode = memo(function HistoryNode({ id, data }: { id: string;
             const targetNode = activeTab?.nodes.find(n => n.id === targetId);
             const alias = targetNode?.data?.alias as string | undefined;
             if (alias && alias.trim() !== "") {
-              return `${targetNode?.data?.label || "Historique"} (${alias})`;
+              return `${targetNode?.data?.label || t("node.history_title_default", "Historique")} (${alias})`;
             }
-            return `${d.targetNodeLabel || "Historique"} (${targetId || "non lié"})`;
+            return `${d.targetNodeLabel || t("node.history_title_default", "Historique")} (${targetId || t("node.history.unlinked", "non lié")})`;
           })()}
         </span>
         {targetId && (
           <button
             onClick={handleClear}
-            title="Vider l'historique"
+            title={t("node.history.clear_tooltip", "Vider l'historique")}
             style={{
               background: "none",
               border: "none",
@@ -124,7 +124,7 @@ export const HistoryNode = memo(function HistoryNode({ id, data }: { id: string;
       <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
         {history.length === 0 ? (
           <div style={{ color: "#444", fontSize: 10, textAlign: "center", marginTop: 40 }}>
-            Aucun historique
+            {t("node.history.empty", "Aucun historique")}
           </div>
         ) : (
           [...history].reverse().map((entry, idx) => {

@@ -46,18 +46,8 @@ function evalPreview(expr: string, vars: Record<string, string>): string | null 
 
 // ── Function snippets shown in dropdown ───────────────────────────────────────
 
-const FN_SNIPPETS = [
-  { label: "random(min,max)",       insert: "random(0,100)",            desc: "entier aléatoire" },
-  { label: "random(min,max,seed)",  insert: "random(0,100,42)",         desc: "avec seed" },
-  { label: "random(true,false)",    insert: "random(true,false)",        desc: "booléen aléatoire" },
-  { label: "random([a,b,c])",       insert: "random([a,b,c])",          desc: "depuis une liste" },
-  { label: "round(val,digits)",     insert: "round(%myVar,2)",          desc: "arrondi" },
-  { label: "ceil(val,digits)",      insert: "ceil(%myVar,0)",           desc: "arrondi supérieur" },
-  { label: "floor(val,digits)",     insert: "floor(%myVar,0)",          desc: "arrondi inférieur" },
-];
-
 export function SmartInput({ label, value, onChange, placeholder, capture, multiline, onCaptureY, disabled }: Props) {
-  const { variables } = useEditorStore();
+  const { variables, t } = useEditorStore();
   const varsMap = Object.fromEntries(variables.map((v) => [v.name, v.value]));
 
   const [showSuggest, setShowSuggest] = useState(false);
@@ -69,6 +59,16 @@ export function SmartInput({ label, value, onChange, placeholder, capture, multi
 
   const preview = evalPreview(value, varsMap);
   const hasVarRef = /%\w/.test(value);
+
+  const FN_SNIPPETS = [
+    { label: "random(min,max)",       insert: "random(0,100)",            desc: t("kb.fn.random.int", "entier aléatoire") },
+    { label: "random(min,max,seed)",  insert: "random(0,100,42)",         desc: t("kb.fn.random.seed", "avec seed") },
+    { label: "random(true,false)",    insert: "random(true,false)",        desc: t("kb.fn.random.bool", "booléen aléatoire") },
+    { label: "random([a,b,c])",       insert: "random([a,b,c])",          desc: t("kb.fn.random.list", "depuis une liste") },
+    { label: "round(val,digits)",     insert: "round(%myVar,2)",          desc: t("kb.fn.round", "arrondi") },
+    { label: "ceil(val,digits)",      insert: "ceil(%myVar,0)",           desc: t("kb.fn.ceil", "arrondi supérieur") },
+    { label: "floor(val,digits)",     insert: "floor(%myVar,0)",          desc: t("kb.fn.floor", "arrondi inférieur") },
+  ];
 
   // ── Change handler ──────────────────────────────────────────────────────────
   const handleChange = (v: string) => {
@@ -112,8 +112,14 @@ export function SmartInput({ label, value, onChange, placeholder, capture, multi
       onChange(String(pos.x));
       if (onCaptureY) onCaptureY(pos.y);
     } catch {
-      const raw = prompt("[DEV] Position X:");
-      if (raw !== null) { onChange(raw); if (onCaptureY) { const ry = prompt("[DEV] Position Y:"); if (ry) onCaptureY(Number(ry)); } }
+      const raw = prompt(t("kb.capture.x_prompt", "[DEV] Position X:"));
+      if (raw !== null) {
+        onChange(raw);
+        if (onCaptureY) {
+          const ry = prompt(t("kb.capture.y_prompt", "[DEV] Position Y:"));
+          if (ry) onCaptureY(Number(ry));
+        }
+      }
     } finally { setCapturing(false); inputRef.current?.focus(); }
   };
 
@@ -137,6 +143,8 @@ export function SmartInput({ label, value, onChange, placeholder, capture, multi
     cursor: disabled ? "not-allowed" : "text",
   };
 
+  const defaultPlaceholder = t("kb.input.placeholder", "valeur, %variable, ou random(...)");
+
   return (
     <div style={{ marginBottom: 9, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
@@ -152,14 +160,14 @@ export function SmartInput({ label, value, onChange, placeholder, capture, multi
             onChange={e => handleChange(e.target.value)} onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => { setFocused(false); setTimeout(() => setShowSuggest(false), 150); }}
-            placeholder={placeholder ?? "valeur, %variable, ou random(...)"}
+            placeholder={placeholder ?? defaultPlaceholder}
             rows={3} style={inputStyle} disabled={disabled} />
         ) : (
           <input ref={inputRef as React.Ref<HTMLInputElement>} type="text" value={value}
             onChange={e => handleChange(e.target.value)} onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => { setFocused(false); setTimeout(() => setShowSuggest(false), 150); }}
-            placeholder={placeholder ?? "valeur, %variable, ou random(...)"}
+            placeholder={placeholder ?? defaultPlaceholder}
             style={inputStyle} disabled={disabled} />
         )}
 
@@ -204,8 +212,8 @@ export function SmartInput({ label, value, onChange, placeholder, capture, multi
           ))}
 
           <div style={{ padding: "3px 10px", background: "#111113", borderTop: "0.5px solid #1a1a1e", fontSize: 9, color: "#333", display: "flex", justifyContent: "space-between" }}>
-            <span>Tab = compléter</span>
-            <span>%% = signe %</span>
+            <span>{t("kb.autocomplete.tab", "Tab = compléter")}</span>
+            <span>%% = {t("kb.autocomplete.pct_sign", "signe %")}</span>
           </div>
         </div>
       )}

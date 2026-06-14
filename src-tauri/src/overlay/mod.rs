@@ -172,7 +172,7 @@ fn virtual_desktop_bounds() -> Result<(i32, i32, u32, u32), String> {
     Ok((new_x, new_y, new_w, new_h))
 }
 
-fn screen_for_region(x: i32, y: i32, w: u32, h: u32) -> i32 {
+pub fn screen_for_region(x: i32, y: i32, w: u32, h: u32) -> i32 {
     let Ok(monitors) = xcap::Monitor::all() else { return 0 };
     let cx = x + (w / 2) as i32;
     let cy = y + (h / 2) as i32;

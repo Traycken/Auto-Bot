@@ -1,4 +1,4 @@
-import { useEditorStore } from "../store/editorStore";
+import { useEditorStore, t } from "../store/editorStore";
 
 interface ToolbarProps {
   handleRun?: () => void;
@@ -8,7 +8,7 @@ export function Toolbar({ handleRun }: ToolbarProps) {
   const {
     tabs, activeTabId,
     status, runSequence, stopSequence,
-    saveActiveTab, openAny,
+    saveActiveTab, saveActiveTabAs, openAny,
   } = useEditorStore();
 
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -21,7 +21,10 @@ export function Toolbar({ handleRun }: ToolbarProps) {
     idle: "#1D9E75", running: "#EF9F27", stopped: "#888", error: "#E24B4A",
   };
   const statusLabel: Record<string, string> = {
-    idle: "Prêt", running: "En cours…", stopped: "Arrêté", error: "Erreur",
+    idle: t("status.ready", "Prêt"),
+    running: t("status.running", "En cours…"),
+    stopped: t("status.stopped", "Arrêté"),
+    error: t("status.error", "Erreur"),
   };
 
   const btn = (onClick: () => void, icon: string, label: string, disabled = false, accent = false, title?: string): React.ReactElement => (
@@ -71,21 +74,22 @@ export function Toolbar({ handleRun }: ToolbarProps) {
       {isMain ? btn(
         () => { isRunning ? stopSequence() : (handleRun ? handleRun() : runSequence()); },
         isRunning ? "ti-player-stop" : "ti-player-play",
-        isRunning ? "Stop" : "Exécuter",
+        isRunning ? t("menu.stop", "Stop") : t("menu.run", "Exécuter"),
         isEmpty && !isRunning,
         !isRunning,
         "F6",
       ) : (
         <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 10px", fontSize:11, fontFamily:"monospace", color:"#3a2a4e", border:"0.5px solid #2a1a3e", borderRadius:6 }}>
           <i className="ti ti-function" style={{ fontSize:12, color:"#A855F7" }} />
-          <span style={{ color:"#A855F7" }}>Fonction</span>
+          <span style={{ color:"#A855F7" }}>{t("toolbar.function", "Fonction")}</span>
         </div>
       )}
 
       <div style={{ width:"0.5px", height:18, background:"#2a2a2e", margin:"0 2px" }} />
 
-      {btn(() => saveActiveTab(), "ti-device-floppy", "Sauver", false, false, "Ctrl+S")}
-      {btn(() => openAny(), "ti-folder-open", "Ouvrir")}
+      {btn(() => saveActiveTab(), "ti-device-floppy", t("menu.save", "Sauver"), false, false, "Ctrl+S")}
+      {btn(() => saveActiveTabAs(), "ti-device-floppy", t("menu.save_as", "Sauver sous"))}
+      {btn(() => openAny(), "ti-folder-open", t("menu.open", "Ouvrir"))}
 
       <div style={{ flex: 1 }} />
 
@@ -101,15 +105,15 @@ export function Toolbar({ handleRun }: ToolbarProps) {
           background: isMain ? (statusColor[status] ?? "#888") : "#A855F7",
           boxShadow: isRunning ? `0 0 6px ${statusColor.running}` : "none",
         }} />
-        {isMain ? (statusLabel[status] ?? status) : "Fonction"}
+        {isMain ? (statusLabel[status] ?? status) : t("toolbar.function", "Fonction")}
       </div>
 
       <span style={{ fontSize:10, color:"#3a3a3e", fontFamily:"monospace" }}>
-        F6 run · Ctrl+S sauver
+        {t("toolbar.shortcuts_hint", "F6 run · Ctrl+S sauver")}
       </span>
 
       <span style={{ fontSize:10, color:"#333", fontFamily:"monospace", marginLeft:4 }}>
-        {nodeCount} nœud{nodeCount !== 1 ? "s" : ""}
+        {nodeCount} {nodeCount !== 1 ? t("toolbar.nodes", "nœuds") : t("toolbar.node", "nœud")}
       </span>
     </div>
   );

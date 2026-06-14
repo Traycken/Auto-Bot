@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useEditorStore } from "../store/editorStore";
+import { useEditorStore, t } from "../store/editorStore";
 
 const S = {
   input: {
@@ -28,7 +28,7 @@ export function VarPanel() {
     <div style={{ padding: "10px 12px", borderBottom: "0.5px solid #2a2a2e" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
         <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555" }}>
-          Variables globales
+          {t("vars.title", "Variables globales")}
         </span>
         <button
           onClick={() => setAdding((a) => !a)}
@@ -39,7 +39,7 @@ export function VarPanel() {
             borderRadius: 5, color: adding ? "#E84C1E" : "#666", fontFamily: "monospace",
           }}
         >
-          {adding ? "✕ annuler" : "+ ajouter"}
+          {adding ? t("vars.cancel", "✕ annuler") : t("vars.add", "+ ajouter")}
         </button>
       </div>
 
@@ -47,23 +47,23 @@ export function VarPanel() {
       {adding && (
         <div style={{ marginBottom: 8, padding: 8, background: "#111113", borderRadius: 6, border: "0.5px solid #2a2a2e" }}>
           <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
-            <input placeholder="nom" value={newName} onChange={(e) => setNewName(e.target.value)}
+            <input placeholder={t("vars.name", "nom")} value={newName} onChange={(e) => setNewName(e.target.value)}
               style={{ ...S.input, flex: 1 }} onKeyDown={(e) => e.key === "Enter" && commit()} />
-            <input placeholder="valeur" value={newVal} onChange={(e) => setNewVal(e.target.value)}
+            <input placeholder={t("vars.value", "valeur")} value={newVal} onChange={(e) => setNewVal(e.target.value)}
               style={{ ...S.input, flex: 1 }} onKeyDown={(e) => e.key === "Enter" && commit()} />
           </div>
-          <input placeholder="description (optionnel)" value={newDesc} onChange={(e) => setNewDesc(e.target.value)}
+          <input placeholder={t("vars.description_optional", "description (optionnel)")} value={newDesc} onChange={(e) => setNewDesc(e.target.value)}
             style={{ ...S.input, marginBottom: 6 }} onKeyDown={(e) => e.key === "Enter" && commit()} />
           <button onClick={commit} style={{
             width: "100%", padding: "4px 0", cursor: "pointer", fontSize: 11, fontFamily: "monospace",
             background: "#E84C1E22", border: "0.5px solid #E84C1E", borderRadius: 5, color: "#E84C1E",
-          }}>Créer variable</button>
+          }}>{t("vars.create", "Créer variable")}</button>
         </div>
       )}
 
       {/* Variable list */}
       {variables.length === 0 && !adding && (
-        <p style={{ fontSize: 10, color: "#333", fontFamily: "monospace" }}>aucune variable</p>
+        <p style={{ fontSize: 10, color: "#333", fontFamily: "monospace" }}>{t("vars.empty", "aucune variable")}</p>
       )}
 
       {variables.map((v) => (
@@ -88,7 +88,7 @@ export function VarPanel() {
 
       {variables.length > 0 && (
         <p style={{ fontSize: 9, color: "#333", marginTop: 5, fontFamily: "monospace" }}>
-          Utiliser %nom dans n'importe quel champ. %% = signe %.
+          {t("vars.hint", "Utiliser %nom dans n'importe quel champ. %% = signe %.")}
         </p>
       )}
     </div>

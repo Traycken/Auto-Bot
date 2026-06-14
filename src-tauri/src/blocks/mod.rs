@@ -159,15 +159,30 @@ pub struct IaBlock {
     #[serde(default)] pub api_key: String,
     #[serde(default)] pub model_name: String,
     #[serde(default)] pub output_var: String,
+    #[serde(default)] pub api_url: String,
+    #[serde(default)] pub x: String,
+    #[serde(default)] pub y: String,
+    #[serde(default)] pub width: String,
+    #[serde(default)] pub height: String,
+    #[serde(default)] pub screen: i32,
 }
 
 fn default_vpo_threshold() -> String { "0.5".into() }
+fn default_vpo_mode() -> String { "detect".into() }
+fn default_vpo_model() -> String { "yolov8n.onnx".into() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VpoBlock {
     #[serde(default)] pub class_name: String,
     #[serde(default = "default_vpo_threshold")] pub threshold: String,
     #[serde(default)] pub output_var: String,
+    #[serde(default)] pub x: String,
+    #[serde(default)] pub y: String,
+    #[serde(default)] pub width: String,
+    #[serde(default)] pub height: String,
+    #[serde(default)] pub screen: i32,
+    #[serde(default = "default_vpo_model")] pub model_name: String,
+    #[serde(default = "default_vpo_mode")] pub mode: String, // "detect" | "classify"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -348,6 +363,7 @@ pub struct OcrBlock {
     #[serde(default)]                   pub match_whole_word: bool,
     #[serde(default)]                   pub use_regex: bool,
     #[serde(default)]                   pub tolerance: u8, // 0-100% edit distance tolerance
+    #[serde(default)]                   pub infinite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -364,6 +380,7 @@ pub struct PixelColorBlock {
     #[serde(default)]                       pub output_var: String,
     #[serde(default="default_iterations")]   pub iterations: String,
     #[serde(default="default_cooldown_ms")]  pub cooldown_ms: String,
+    #[serde(default)]                       pub infinite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -379,6 +396,7 @@ pub struct ImageMatchBlock {
     #[serde(default="default_cooldown_ms")]  pub cooldown_ms: String,
     #[serde(default)]                        pub output_var: String,
     #[serde(default = "default_match_first")] pub match_mode: String,
+    #[serde(default)]                        pub infinite: bool,
 }
 
 fn default_match_first() -> String { "first".into() }

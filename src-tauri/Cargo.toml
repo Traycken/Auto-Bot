@@ -35,8 +35,10 @@ url                = "2"
 regex              = "1"
 chrono             = { version = "0.4", features = ["serde"] }
 windows-sys        = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Power"] }
-reqwest            = { version = "0.12", features = ["json"] }
+reqwest            = { version = "0.12", features = ["json", "stream"] }
+tokio-stream       = "0.1"
 ort                = "2.0.0-rc.9"
+ultralytics-inference = "0.0.18"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

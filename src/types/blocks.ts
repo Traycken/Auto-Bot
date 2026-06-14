@@ -207,6 +207,12 @@ export interface IaBlock {
   api_key: string;
   model_name: string;
   output_var: string;
+  api_url?: string;
+  x?: string;
+  y?: string;
+  width?: string;
+  height?: string;
+  screen?: number;
 }
 
 export interface VpoBlock {
@@ -214,6 +220,13 @@ export interface VpoBlock {
   class_name: string;
   threshold: string;
   output_var: string;
+  x?: string;
+  y?: string;
+  width?: string;
+  height?: string;
+  screen?: number;
+  model_name?: string;
+  mode?: "detect" | "classify";
 }
 
 // ── Union ─────────────────────────────────────────────────────────────────────
@@ -320,7 +333,7 @@ export const BLOCK_CATALOG: BlockMeta[] = [
     defaultData: { array_var:"myArray", index:"0", output_var:"item" } },
   { kind: "array_delete", label: "Suppr. Index",  category: "collection", color: "#8B5CF6", icon: "ti-trash-x",
     defaultData: { array_var:"myArray", index:"0" } },
-  { kind: "dict_find",    label: "Find Key",      category: "collection", color: "#8B5CF6", icon: "ti-key",
+  { kind: "dict_find",    label: "Find Key",      category: "dict",       color: "#8B5CF6", icon: "ti-key",
     defaultData: { dict_var:"myDict", key:"", output_var:"value" } },
 
   // ── System ────────────────────────────────────────────────────────────────
@@ -331,9 +344,9 @@ export const BLOCK_CATALOG: BlockMeta[] = [
   { kind: "console", label: "Console", category: "system", color: "#64748B", icon: "ti-terminal",
     defaultData: { text: "Log message: %myVar" } },
   { kind: "ia", label: "IA (AI Inférence)", category: "system", color: "#3B82F6", icon: "ti-brain",
-    defaultData: { mode: "text", prompt: "Explain %myVar", api_mode: "external", api_key: "", model_name: "gpt-4o", output_var: "response" } },
+    defaultData: { mode: "text", prompt: "Explain %myVar", api_mode: "external", api_key: "", model_name: "gpt-4o", output_var: "response", api_url: "", x: "0", y: "0", width: "400", height: "300", screen: 0 } },
   { kind: "vpo", label: "VPO (YOLO Vision)", category: "system", color: "#10B981", icon: "ti-eye",
-    defaultData: { class_name: "person", threshold: "0.5", output_var: "vpoMatch" } },
+    defaultData: { class_name: "person", threshold: "0.5", output_var: "vpoResult", x: "0", y: "0", width: "400", height: "300", screen: 0, model_name: "yolov8n.onnx", mode: "detect", yolo_version: "v8", yolo_size: "n" } },
 
   // ── Function ──────────────────────────────────────────────────────────────
   { kind: "function_call", label: "Appel Fonction", category: "function", color: "#A855F7", icon: "ti-function",

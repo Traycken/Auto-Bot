@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useEditorStore } from "../store/editorStore";
+import { useEditorStore, t } from "../store/editorStore";
 
 type LogLevel = "log" | "info" | "warn" | "error" | "tauri" | "store" | "run" | "ok";
 
@@ -126,7 +126,7 @@ export function Console() {
   const filtered = filter === "all" ? lines : lines.filter((l) => l.level === filter);
 
   const fmt = (ts: number) =>
-    new Date(ts).toLocaleTimeString("fr-FR", { hour12: false });
+    new Date(ts).toLocaleTimeString(undefined, { hour12: false });
 
   return (
     <div style={{ position: "relative", pointerEvents: "none", zIndex: 9999 }}>
@@ -151,14 +151,14 @@ export function Console() {
         }}>
           <button
             onClick={() => setOpen((o) => !o)}
-            title={open ? "Réduire" : "Ouvrir la console"}
+            title={open ? t("console.minimize", "Réduire") : t("console.open", "Ouvrir la console")}
             style={{ background: "none", border: "none", cursor: "pointer", color: "#666", fontSize: 13, padding: "2px 4px", display: "flex", alignItems: "center" }}
           >
             <i className={`ti ${open ? "ti-chevron-down" : "ti-chevron-up"}`} />
           </button>
 
           <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555" }}>
-            Console Unifiée
+            {t("console.title", "Console Unifiée")}
           </span>
 
           <div style={{ display: "flex", gap: 3, marginLeft: 4 }}>
@@ -188,7 +188,7 @@ export function Console() {
             }}
             style={{ fontSize: 9, padding: "2px 8px", cursor: "pointer", background: "none", border: "0.5px solid #2a2a2e", borderRadius: 6, color: "#555", fontFamily: "monospace" }}
           >
-            effacer
+            {t("console.clear", "effacer")}
           </button>
         </div>
 
@@ -198,7 +198,7 @@ export function Console() {
             fontFamily: "'JetBrains Mono', 'Fira Mono', monospace", fontSize: 11,
           }}>
             {filtered.length === 0 && (
-              <div style={{ color: "#333", padding: "8px 14px" }}>— aucune entrée —</div>
+              <div style={{ color: "#333", padding: "8px 14px" }}>{t("console.empty", "— aucune entrée —")}</div>
             )}
             {filtered.map((line) => (
               <div

@@ -4,6 +4,7 @@
  * Réagit à l'événement global CustomEvent("open-help", { detail: { kind } }).
  */
 import { useEffect, useRef, useState, useCallback } from "react";
+import { t } from "../store/editorStore";
 
 // ── Documentation des blocs ───────────────────────────────────────────────────
 
@@ -171,7 +172,7 @@ const HELP_DOCS: Record<string, BlockDoc> = {
     inputs: ["Dicts — noms de variables séparés par virgule", "Var. sortie — dictionnaire résultat"],
   },
   dict_find: {
-    label: "Find Key", color: "#8B5CF6", icon: "ti-key", category: "Collection",
+    label: "Find Key", color: "#8B5CF6", icon: "ti-key", category: "Dict",
     description: "Recherche la valeur associée à une clé dans un dictionnaire.",
     inputs: ["Dict — variable dictionnaire", "Clé — la clé à rechercher", "Var. sortie — valeur trouvée"],
   },
@@ -336,7 +337,7 @@ export function HelpModal({ open, initialKind, onClose }: HelpModalProps) {
         <div style={{ width: 18, height: 18, borderRadius: 4, background: "#E84C1E", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <i className="ti ti-help" style={{ fontSize: 10, color: "#fff" }} />
         </div>
-        <span style={{ fontSize: 12, color: "#d0d0d0", fontWeight: 600, flex: 1 }}>Documentation — Auto Bot</span>
+        <span style={{ fontSize: 12, color: "#d0d0d0", fontWeight: 600, flex: 1 }}>{t("doc.title", "Documentation — Auto Bot")}</span>
         <button
           onClick={onClose}
           style={{
@@ -368,13 +369,15 @@ export function HelpModal({ open, initialKind, onClose }: HelpModalProps) {
             }}
           >
             <i className="ti ti-code" style={{ fontSize: 11 }} />
-            Expressions
+            {t("doc.expressions_btn", "Expressions")}
           </button>
           <div style={{ height: "0.5px", background: "#1a1a24", margin: "5px 10px" }} />
 
           {byCategory.map(({ cat, items }) => (
             <div key={cat}>
-              <p style={{ fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: "#2a2a3a", padding: "6px 14px 2px" }}>{cat}</p>
+              <p style={{ fontSize: 8, letterSpacing: "0.1em", textTransform: "uppercase", color: "#2a2a3a", padding: "6px 14px 2px" }}>
+                {t("category." + cat, cat)}
+              </p>
               {items.map(([kind, d]) => (
                 <button
                   key={kind}
@@ -391,7 +394,7 @@ export function HelpModal({ open, initialKind, onClose }: HelpModalProps) {
                   onMouseLeave={e => { if (selectedKind !== kind) e.currentTarget.style.color = "#666"; }}
                 >
                   <i className={`ti ${d.icon}`} style={{ fontSize: 10, color: selectedKind === kind ? d.color : "#333" }} />
-                  {d.label}
+                  {t("node." + kind, d.label)}
                 </button>
               ))}
             </div>
@@ -408,46 +411,50 @@ export function HelpModal({ open, initialKind, onClose }: HelpModalProps) {
                   <i className={`ti ${doc.icon}`} style={{ fontSize: 14, color: "#fff" }} />
                 </div>
                 <div>
-                  <h2 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", margin: 0 }}>{doc.label}</h2>
-                  <span style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.08em" }}>{doc.category}</span>
+                  <h2 style={{ fontSize: 15, fontWeight: 700, color: "#e0e0e0", margin: 0 }}>
+                    {selectedKind === "_expressions" ? t("doc._expressions.label", doc.label) : t("node." + selectedKind, doc.label)}
+                  </h2>
+                  <span style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    {t("category." + doc.category, doc.category)}
+                  </span>
                 </div>
               </div>
 
               {/* Description */}
               <p style={{ fontSize: 11, color: "#888", lineHeight: 1.7, marginBottom: 20, borderLeft: `2px solid ${doc.color}66`, paddingLeft: 10 }}>
-                {doc.description}
+                {t("doc." + selectedKind + ".description", doc.description)}
               </p>
 
               {/* Inputs */}
               {doc.inputs && doc.inputs.length > 0 && (
-                <Section title="Paramètres / Entrées" color="#378ADD">
-                  {doc.inputs.map((inp, i) => <DocItem key={i} text={inp} color="#378ADD" />)}
+                <Section title={t("doc.section.inputs", "Paramètres / Entrées")} color="#378ADD">
+                  {doc.inputs.map((inp, i) => <DocItem key={i} text={t("doc." + selectedKind + ".input." + i, inp)} color="#378ADD" />)}
                 </Section>
               )}
 
               {/* Outputs */}
               {doc.outputs && doc.outputs.length > 0 && (
-                <Section title="Sorties / Connexions" color="#1D9E75">
-                  {doc.outputs.map((out, i) => <DocItem key={i} text={out} color="#1D9E75" />)}
+                <Section title={t("doc.section.outputs", "Sorties / Connexions")} color="#1D9E75">
+                  {doc.outputs.map((out, i) => <DocItem key={i} text={t("doc." + selectedKind + ".output." + i, out)} color="#1D9E75" />)}
                 </Section>
               )}
 
               {/* Expressions */}
               {doc.expressions && doc.expressions.length > 0 && (
-                <Section title="Expressions disponibles" color="#A855F7">
-                  {doc.expressions.map((ex, i) => <DocItem key={i} text={ex} color="#A855F7" mono />)}
+                <Section title={t("doc.section.expressions", "Expressions disponibles")} color="#A855F7">
+                  {doc.expressions.map((ex, i) => <DocItem key={i} text={t("doc." + selectedKind + ".expr." + i, ex)} color="#A855F7" mono />)}
                 </Section>
               )}
 
               {/* Notes */}
               {doc.notes && doc.notes.length > 0 && (
-                <Section title="Notes" color="#EF9F27">
-                  {doc.notes.map((n, i) => <DocItem key={i} text={n} color="#EF9F27" />)}
+                <Section title={t("doc.section.notes", "Notes")} color="#EF9F27">
+                  {doc.notes.map((n, i) => <DocItem key={i} text={t("doc." + selectedKind + ".note." + i, n)} color="#EF9F27" />)}
                 </Section>
               )}
             </>
           ) : (
-            <p style={{ color: "#444", fontSize: 11 }}>Sélectionne un bloc dans le panneau gauche.</p>
+            <p style={{ color: "#444", fontSize: 11 }}>{t("doc.select_hint", "Sélectionne un bloc dans le panneau gauche.")}</p>
           )}
         </div>
       </div>

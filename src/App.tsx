@@ -28,6 +28,7 @@ import { TabBar }              from "./components/TabBar";
 import { MenuBar }             from "./components/MenuBar";
 import { HelpModal, useHelpModal } from "./components/HelpModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { AboutModal } from "./components/AboutModal";
 
 const nodeTypes: NodeTypes = {
   macroBlock:          MacroBlockNode,
@@ -48,12 +49,6 @@ const edgeTypes: EdgeTypes = {
   default:    AnimatedEdge,
 };
 
-const CAT_LABELS: Record<string, string> = {
-  mouse: "Souris", keyboard: "Clavier",
-  flow: "Contrôle", vision: "Vision", logic: "Logique", function: "Fonctions",
-  array: "Arrays", dict: "Dicts", system: "Système",
-};
-
 interface DragState { kind: BlockKind; label: string; color: string; x: number; y: number; }
 
 // ── Context Menu ──────────────────────────────────────────────────────────────
@@ -69,6 +64,7 @@ function ContextMenu({
   onCopy: () => void;
   onPaste: () => void;
 }) {
+  const { t } = useEditorStore();
   useEffect(() => {
     const handler = () => onClose();
     window.addEventListener("mousedown", handler);
@@ -77,11 +73,11 @@ function ContextMenu({
 
   const items: Array<{ label: string; icon: string; action: () => void; color?: string; disabled?: boolean }> = menu.nodeId
     ? [
-        { label: "Copier", icon: "ti-copy", action: () => { onCopy(); onClose(); } },
-        { label: "Supprimer", icon: "ti-trash", action: () => { onDelete(); onClose(); }, color: "#E24B4A" },
+        { label: t("app.ctx.copy", "Copier"), icon: "ti-copy", action: () => { onCopy(); onClose(); } },
+        { label: t("app.ctx.delete", "Supprimer"), icon: "ti-trash", action: () => { onDelete(); onClose(); }, color: "#E24B4A" },
       ]
     : [
-        { label: "Coller", icon: "ti-clipboard", action: () => { onPaste(); onClose(); } },
+        { label: t("app.ctx.paste", "Coller"), icon: "ti-clipboard", action: () => { onPaste(); onClose(); } },
       ];
 
   return (
@@ -127,6 +123,8 @@ function AppInner() {
     copyNodes, pasteNodes, saveActiveTab, openAny,
     removeNode,
     edges,
+    undo, redo,
+    t,
   } = useEditorStore();
 
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -147,11 +145,24 @@ function AppInner() {
 
   // Settings modal state
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   // Cycle Modal State
   const [showCycleModal, setShowCycleModal] = useState(false);
   const acceptUnsupervisedRun = useEditorStore(s => s.acceptUnsupervisedRun);
   const setAcceptUnsupervisedRun = useEditorStore(s => s.setAcceptUnsupervisedRun);
+
+  // YOLO download & convert progress state
+  const [yoloProgress, setYoloProgress] = useState<{
+    visible: boolean;
+    status: "checking" | "downloading" | "converting" | "done" | "error";
+    progress: number;
+    error?: string;
+  }>({
+    visible: false,
+    status: "done",
+    progress: 0,
+  });
 
   const handleRunSequence = useCallback(async () => {
     try {
@@ -181,6 +192,30 @@ function AppInner() {
     window.addEventListener("open-help", handler);
     return () => window.removeEventListener("open-help", handler);
   }, [setHelpOpen, setHelpKind]);
+
+  // Listen for YOLO progress from backend
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<{ status: "checking" | "downloading" | "converting" | "done" | "error"; progress: number; error?: string }>(
+        "yolo://progress",
+        (event) => {
+          const { status, progress, error } = event.payload;
+          setYoloProgress({
+            visible: status === "downloading" || status === "converting" || status === "error",
+            status,
+            progress,
+            error,
+          });
+        }
+      ).then((u) => {
+        unsub = u;
+      });
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
 
   // ── Raccourcis clavier globaux ────────────────────────────────────────────
   useEffect(() => {
@@ -216,6 +251,13 @@ function AppInner() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault(); saveActiveTab();
+      }
+      // Undo / Redo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        e.preventDefault(); undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.shiftKey && e.key === "Z"))) {
+        e.preventDefault(); redo();
       }
       // UI Zoom Keyboard Shortcuts
       if ((e.ctrlKey || e.metaKey) && (e.key === "+" || e.key === "=")) {
@@ -254,7 +296,7 @@ function AppInner() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [handleRunSequence, stopSequence, copyNodes, pasteNodes, saveActiveTab, activeTabId]);
+  }, [handleRunSequence, stopSequence, copyNodes, pasteNodes, saveActiveTab, activeTabId, undo, redo]);
 
   // ── Drag depuis la palette ────────────────────────────────────────────────
   useEffect(() => {
@@ -325,6 +367,22 @@ function AppInner() {
   );
 
 
+  const LOCALIZED_CAT_LABELS: Record<string, string> = {
+    mouse: t("app.cat.mouse", "Souris"),
+    keyboard: t("app.cat.keyboard", "Clavier"),
+    flow: t("app.cat.flow", "Contrôle"),
+    vision: t("app.cat.vision", "Vision"),
+    logic: t("app.cat.logic", "Logique"),
+    function: t("app.cat.function", "Fonctions"),
+    array: t("app.cat.array", "Arrays"),
+    dict: t("app.cat.dict", "Dicts"),
+    system: t("app.cat.system", "Système"),
+  };
+
+  const getLocalizedPaletteLabel = (kind: string, defaultVal: string) => {
+    return t(`palette.block.${kind}`, defaultVal);
+  };
+
   return (
     <div style={{
       display: "flex", flexDirection: "column",
@@ -334,7 +392,7 @@ function AppInner() {
       userSelect: drag ? "none" : "auto",
     }}>
       {/* ── Barre de menus ── */}
-      <MenuBar onOpenHelp={() => setHelpOpen(true)} onOpenSettings={() => setSettingsOpen(true)} />
+      <MenuBar onOpenHelp={() => setHelpOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onOpenAbout={() => setAboutOpen(true)} />
 
       {/* ── Toolbar run/stop + status ── */}
       <Toolbar handleRun={handleRunSequence} />
@@ -353,7 +411,7 @@ function AppInner() {
         }}>
           <div style={{ padding: "10px 13px 7px", borderBottom: "0.5px solid #2a2a2e" }}>
             <p style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "#444" }}>
-              Palette · glisser-déposer
+              {t("palette.drag_drop", "Palette · glisser-déposer")}
             </p>
             {cursorPos && (
               <div style={{ display: "flex", gap: 4, marginTop: 5, marginBottom: 5 }}>
@@ -390,7 +448,7 @@ function AppInner() {
               </div>
             )}
             <p style={{ fontSize: 9, color: "#2a2a2e", marginTop: 2 }}>
-              F6 Run · Ctrl+S Sauver · F8 Pos
+              {t("palette.shortcuts_reminder", "F6 Run · Ctrl+S Sauver · F8 Pos")}
             </p>
             {tabKind === "function" && (
               <p style={{
@@ -399,7 +457,7 @@ function AppInner() {
                 borderRadius: 4, border: "0.5px solid #A855F733",
               }}>
                 <i className="ti ti-function" style={{ marginRight: 4 }} />
-                Mode Fonction
+                {t("palette.function_mode", "Mode Fonction")}
               </p>
             )}
           </div>
@@ -410,12 +468,12 @@ function AppInner() {
                 fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase",
                 color: "#3a3a3e", padding: "8px 13px 3px",
               }}>
-                {CAT_LABELS[cat] ?? cat}
+                {LOCALIZED_CAT_LABELS[cat] ?? cat}
               </p>
               {items.map(meta => (
                 <div
                   key={meta.kind}
-                  onPointerDown={e => startDrag(meta.kind, meta.label, meta.color, e)}
+                  onPointerDown={e => startDrag(meta.kind, getLocalizedPaletteLabel(meta.kind, meta.label), meta.color, e)}
                   style={{
                     display: "flex", alignItems: "center", gap: 8,
                     padding: "6px 13px", cursor: "grab",
@@ -426,7 +484,7 @@ function AppInner() {
                   onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
                 >
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color, flexShrink: 0 }} />
-                  <span>{meta.label}</span>
+                  <span>{getLocalizedPaletteLabel(meta.kind, meta.label)}</span>
                 </div>
               ))}
             </div>
@@ -445,7 +503,7 @@ function AppInner() {
               onMouseEnter={e => (e.currentTarget.style.borderColor = "#E84C1E")}
               onMouseLeave={e => (e.currentTarget.style.borderColor = "#2a2a2e")}
             >
-              <i className="ti ti-folder-open" style={{ fontSize: 11 }} /> Ouvrir…
+              <i className="ti ti-folder-open" style={{ fontSize: 11 }} /> {t("palette.open_any", "Ouvrir…")}
             </button>
           </div>
         </aside>
@@ -530,6 +588,12 @@ function AppInner() {
         onClose={() => setSettingsOpen(false)}
       />
 
+      {/* ── About modal ── */}
+      <AboutModal
+        isOpen={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+      />
+
       {/* ── Unsupervised Loop Warning Modal ── */}
       {showCycleModal && (
         <div style={{
@@ -544,12 +608,10 @@ function AppInner() {
           }}>
             <h3 style={{ color: "#E24B4A", display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 12 }}>
               <i className="ti ti-alert-triangle" />
-              ATTENTION : Boucle Infinie Détectée
+              {t("app.loop_warn.title", "ATTENTION : Boucle Infinie Détectée")}
             </h3>
             <p style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5, marginBottom: 16 }}>
-              Votre séquence contient des connexions formant une boucle infinie non supervisée (sans nœud "Boucle FOR", "Itérations" ou "ForEach" intermédiaire). 
-              <br /><br />
-              Lancer l'exécution de cette boucle risque de saturer le processeur ou de faire planter l'application. Les connexions incriminées sont affichées en rouge.
+              {t("app.loop_warn.desc", "Votre séquence contient des connexions formant une boucle infinie non supervisée (sans nœud \"Boucle FOR\", \"Itérations\" ou \"ForEach\" intermédiaire). Lancer l'exécution de cette boucle risque de saturer le processeur ou de faire planter l'application. Les connexions incriminées sont affichées en rouge.")}
             </p>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
               <input
@@ -560,7 +622,7 @@ function AppInner() {
                 style={{ cursor: "pointer" }}
               />
               <label htmlFor="accept-cycle-chk" style={{ fontSize: 11, color: "#aaa", cursor: "pointer", userSelect: "none" }}>
-                J'accepte le risque et autorise le lancement
+                {t("app.loop_warn.accept_label", "J'accepte le risque et autorise le lancement")}
               </label>
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -572,7 +634,7 @@ function AppInner() {
                   fontSize: 11, cursor: "pointer"
                 }}
               >
-                Annuler
+                {t("app.generic.cancel", "Annuler")}
               </button>
               <button
                 onClick={() => {
@@ -589,9 +651,72 @@ function AppInner() {
                   fontSize: 11, cursor: acceptUnsupervisedRun ? "pointer" : "not-allowed"
                 }}
               >
-                Lancer
+                {t("app.generic.run", "Lancer")}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── YOLO Model Progress Modal ── */}
+      {yoloProgress.visible && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 999999,
+          background: "rgba(0, 0, 0, 0.6)", backdropFilter: "blur(5px)",
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+          <div style={{
+            background: "#18181b", border: "1px solid #3f3f46",
+            borderRadius: 12, padding: 24, width: 420,
+            fontFamily: "monospace", boxShadow: "0 20px 50px rgba(0,0,0,0.5)"
+          }}>
+            <h3 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#fff", margin: "0 0 16px 0" }}>
+              {yoloProgress.status === "error" ? (
+                <>
+                  <i className="ti ti-alert-triangle" style={{ color: "#E24B4A", fontSize: 16 }} />
+                  <span style={{ color: "#E24B4A" }}>{t("app.yolo.error_title", "Erreur YOLO")}</span>
+                </>
+              ) : (
+                <>
+                  <i className="ti ti-loader animate-spin" style={{ color: "#5F3FDC", fontSize: 16 }} />
+                  <span>{t("app.yolo.preparing", "Préparation du modèle YOLO")}</span>
+                </>
+              )}
+            </h3>
+
+            <p style={{ fontSize: 11, color: "#a1a1aa", margin: "0 0 16px 0", lineHeight: 1.4 }}>
+              {yoloProgress.status === "checking" && t("app.yolo.status.checking", "Vérification des versions du modèle...")}
+              {yoloProgress.status === "downloading" && `${t("app.yolo.status.downloading", "Téléchargement du fichier de modèle YOLO...")} (${yoloProgress.progress}%)`}
+              {yoloProgress.status === "converting" && `${t("app.yolo.status.converting", "Conversion du modèle en format ONNX...")} (${yoloProgress.progress}%)`}
+              {yoloProgress.status === "error" && `${t("app.yolo.status.error_occurred", "Une erreur est survenue :")} ${yoloProgress.error}`}
+            </p>
+
+            {yoloProgress.status !== "error" && (
+              <div style={{
+                background: "#27272a", borderRadius: 4, height: 6, width: "100%", overflow: "hidden", position: "relative"
+              }}>
+                <div style={{
+                  background: "linear-gradient(90deg, #5F3FDC, #8b5cf6)",
+                  height: "100%",
+                  width: `${yoloProgress.progress}%`,
+                  transition: "width 0.2s ease-out",
+                }} />
+              </div>
+            )}
+
+            {yoloProgress.status === "error" && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+                <button
+                  onClick={() => setYoloProgress(prev => ({ ...prev, visible: false }))}
+                  style={{
+                    background: "#E24B4A", border: "none", borderRadius: 6,
+                    padding: "6px 14px", color: "#fff", fontSize: 11, cursor: "pointer"
+                  }}
+                >
+                  {t("app.generic.close", "Fermer")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

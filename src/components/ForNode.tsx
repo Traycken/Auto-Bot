@@ -1,17 +1,10 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { useNodeWidth, useEditorStore } from "../store/editorStore";
+import { useNodeWidth, useEditorStore, t } from "../store/editorStore";
 
 interface ForData { var_name: string; from: string; to: string; step: string; [key: string]: unknown; }
 
 const C = "#7F77DD";
-
-const HANDLES = [
-  { id: "body",  label: "▶ corps",  color: "#1D9E75", type: "source" as const, pct: "12.5%" },
-  { id: "loop",  label: "↩ retour", color: "#7F77DD", type: "target" as const, pct: "37.5%" },
-  { id: "break", label: "⏏ break",  color: "#E24B4A", type: "target" as const, pct: "62.5%" },
-  { id: "after", label: "→ suite",  color: "#999",    type: "source" as const, pct: "87.5%" },
-];
 
 export const ForNode = memo(function ForNode({ id, data, selected }: NodeProps) {
   const NODE_W = useNodeWidth();
@@ -19,6 +12,13 @@ export const ForNode = memo(function ForNode({ id, data, selected }: NodeProps) 
 
   const currentTick = useEditorStore(s => s.forTicks[id]);
   const active = useEditorStore(s => s.activeNodeId === id);
+
+  const HANDLES = [
+    { id: "body",  label: t("node.for.body", "▶ corps"),  color: "#1D9E75", type: "source" as const, pct: "12.5%" },
+    { id: "loop",  label: t("node.for.return", "↩ retour"), color: "#7F77DD", type: "target" as const, pct: "37.5%" },
+    { id: "break", label: t("node.for.break", "⏏ break"),  color: "#E24B4A", type: "target" as const, pct: "62.5%" },
+    { id: "after", label: t("node.for.suite", "→ suite"),  color: "#999",    type: "source" as const, pct: "87.5%" },
+  ];
 
   return (
     <div style={{
@@ -40,7 +40,7 @@ export const ForNode = memo(function ForNode({ id, data, selected }: NodeProps) 
           <i className="ti ti-arrows-right-left" style={{ fontSize: 11, color: "#fff" }} />
         </div>
         <span style={{ fontWeight: 500, color: "#e0e0e0", fontSize: 11 }}>
-          Boucle FOR{d.alias ? ` (${d.alias})` : ""}
+          {t("node.for", "Boucle FOR")}{d.alias ? ` (${d.alias})` : ""}
         </span>
         {currentTick !== undefined && (
           <span style={{ marginLeft: "auto", fontSize: 9, padding: "1px 5px", background: `${C}22`, border: `0.5px solid ${C}`, borderRadius: 4, color: "#fff" }}>
@@ -52,7 +52,7 @@ export const ForNode = memo(function ForNode({ id, data, selected }: NodeProps) 
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "for_loop" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:16, height:16, borderRadius:4, background:"transparent",
             border:"0.5px solid #333", cursor:"pointer", display:"flex",
@@ -67,13 +67,13 @@ export const ForNode = memo(function ForNode({ id, data, selected }: NodeProps) 
 
       {/* Expression */}
       <div style={{ padding: "8px 10px", fontSize: 10, lineHeight: 1.7 }}>
-        <span style={{ color: C }}>pour </span>
+        <span style={{ color: C }}>{t("node.for.for", "pour ")}</span>
         <span style={{ color: "#e0e0e0", fontWeight: 600 }}>{d.var_name || "i"}</span>
-        <span style={{ color: C }}> de </span>
+        <span style={{ color: C }}>{t("node.for.from", " de ")}</span>
         <span style={{ color: "#EF9F27" }}>{d.from || "0"}</span>
-        <span style={{ color: C }}> à </span>
+        <span style={{ color: C }}>{t("node.for.to", " à ")}</span>
         <span style={{ color: "#EF9F27" }}>{d.to || "10"}</span>
-        <span style={{ color: C }}> pas </span>
+        <span style={{ color: C }}>{t("node.for.step", " pas ")}</span>
         <span style={{ color: "#EF9F27" }}>{d.step || "1"}</span>
       </div>
 

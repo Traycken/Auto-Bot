@@ -555,7 +555,6 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
         }
 
         Block::PixelColor(b) => {
-            let iterations = (eval_full(&b.iterations, vars) as u64).max(1);
             let cooldown   = eval_full(&b.cooldown_ms, vars) as u64;
             let x = eval_full(&b.x, vars) as i32;
             let y = eval_full(&b.y, vars) as i32;
@@ -565,22 +564,27 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
                        (((h2>>16)&0xFF)as u8,((h2>>8)&0xFF)as u8,(h2&0xFF)as u8) }
             };
             let exp = ((er as u32)<<16)|((eg as u32)<<8)|(eb as u32);
-            let mut matched = false;
-            for i in 0..iterations {
+            let mut matched;
+            let mut i = 0;
+            loop {
                 if token.is_cancelled() { return Ok("not_found".into()); }
                 matched = crate::ipc::sample_pixel_color(x, y, b.screen, exp, b.tolerance);
                 let _ = h.emit("engine://pixel-result", matched);
                 if matched { break; }
-                if i+1<iterations&&cooldown>0 {
+                if !b.infinite && b.iterations != "∞" {
+                    let iterations = (eval_full(&b.iterations, vars) as u64).max(1);
+                    if i + 1 >= iterations { break; }
+                }
+                if cooldown > 0 {
                     tokio::select! { _ = sleep(Duration::from_millis(cooldown)) => {} _ = token.cancelled() => {} }
                 }
+                i += 1;
             }
             if !b.output_var.is_empty() { vars.insert(b.output_var.clone(), matched.to_string()); }
             if matched { "found".into() } else { "not_found".into() }
         }
 
         Block::ImageMatch(b) => {
-            let iterations = (eval_full(&b.iterations, vars) as u64).max(1);
             let cooldown   = eval_full(&b.cooldown_ms, vars) as u64;
             let threshold  = eval_full(&b.threshold, vars).clamp(0.0, 1.0);
             let x = eval_full(&b.region_x, vars) as i32;
@@ -590,17 +594,24 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
             let mode = if b.match_mode == "all" { "all" } else { "first" };
             let mut matched = false;
             let mut last_boxes: Vec<crate::ipc::MatchBox> = vec![];
-            for i in 0..iterations {
+            let mut i = 0;
+            loop {
                 if token.is_cancelled() { return Ok("not_found".into()); }
                 if let Ok(result) = crate::ipc::match_image_region(&b.template_b64, x, y, w, hgt, b.screen, threshold, mode) {
                     matched = result.matched;
                     last_boxes = result.boxes;
                 }
-                let _ = h.emit("engine://image-result", serde_json::json!({"matched":matched,"iteration":i+1,"iterations":iterations}));
+                let iterations_val = if b.infinite || b.iterations == "∞" { 999999 } else { (eval_full(&b.iterations, vars) as u64).max(1) };
+                let _ = h.emit("engine://image-result", serde_json::json!({"matched":matched,"iteration":i+1,"iterations":iterations_val}));
                 if matched { break; }
-                if i+1<iterations&&cooldown>0 {
+                if !b.infinite && b.iterations != "∞" {
+                    let iterations = (eval_full(&b.iterations, vars) as u64).max(1);
+                    if i + 1 >= iterations { break; }
+                }
+                if cooldown > 0 {
                     tokio::select! { _ = sleep(Duration::from_millis(cooldown)) => {} _ = token.cancelled() => {} }
                 }
+                i += 1;
             }
             if !b.output_var.is_empty() {
                 let out_var = interpolate_text(&b.output_var, vars);
@@ -613,7 +624,6 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
         }
 
         Block::Ocr(b) => {
-            let iterations = (eval_full(&b.iterations, vars) as u64).max(1);
             let cooldown = eval_full(&b.cooldown_ms, vars) as u64;
             let target_text = resolve_expressions_in_text(&b.match_text, vars);
             
@@ -624,8 +634,9 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
 
             let mut matched = false;
             let mut ocr_text = String::new();
+            let mut i = 0;
             
-            for i in 0..iterations {
+            loop {
                 if token.is_cancelled() { return Ok("not_found".into()); }
                 
                 // Exécution réelle de Tesseract
@@ -699,20 +710,26 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
                     matched = text_to_check.contains(&pattern);
                 }
                 
+                let iterations_val = if b.infinite || b.iterations == "∞" { 999999 } else { (eval_full(&b.iterations, vars) as u64).max(1) };
                 let _ = h.emit("engine://ocr-result", serde_json::json!({
                     "matched": matched,
                     "text": ocr_text,
                     "iteration": i + 1,
-                    "iterations": iterations
+                    "iterations": iterations_val
                 }));
                 
                 if matched { break; }
-                if i + 1 < iterations && cooldown > 0 {
+                if !b.infinite && b.iterations != "∞" {
+                    let iterations = (eval_full(&b.iterations, vars) as u64).max(1);
+                    if i + 1 >= iterations { break; }
+                }
+                if cooldown > 0 {
                     tokio::select! {
                         _ = sleep(Duration::from_millis(cooldown)) => {}
                         _ = token.cancelled() => {}
                     }
                 }
+                i += 1;
             }
             
             if !b.output_var.is_empty() {
@@ -1107,19 +1124,124 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
 
         Block::Ia(b) => {
             let prompt = resolve_expressions_in_text(&b.prompt, vars);
-            let response = if b.api_mode == "external" {
-                // Perform a simple mock api call to LLM using reqwest (since network is restricted/mocked)
-                // In actual deployment, it issues a request to OpenAI/Anthropic/Ollama APIs.
-                let _client = reqwest::Client::new();
-                let api_url = if b.model_name.contains("gpt") {
-                    "https://api.openai.com/v1/chat/completures"
+            
+            let base_url = if b.api_url.is_empty() {
+                if b.api_mode == "local" {
+                    "http://localhost:11434/v1".to_string()
                 } else {
-                    "http://localhost:11434/api/generate" // Ollama fallback
-                };
-                format!("Mock API call to {} with prompt: {}", api_url, prompt)
+                    "https://api.openai.com/v1".to_string()
+                }
             } else {
-                format!("Local AI model response for: {}", prompt)
+                b.api_url.trim_end_matches('/').to_string()
             };
+
+            let url = if base_url.ends_with("/chat/completions") {
+                base_url
+            } else if base_url.ends_with("/v1") {
+                format!("{}/chat/completions", base_url)
+            } else {
+                format!("{}/v1/chat/completions", base_url)
+            };
+
+            let b64_img = if b.mode == "image" {
+                let x = eval_full(&b.x, vars) as i32;
+                let y = eval_full(&b.y, vars) as i32;
+                let w = (eval_full(&b.width, vars) as u32).max(1);
+                let hgt = (eval_full(&b.height, vars) as u32).max(1);
+                let screen = b.screen;
+
+                match capture_image_for_ocr(x, y, w, hgt, screen) {
+                    Ok(cropped) => {
+                        let mut buf = Vec::new();
+                        if cropped.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_ok() {
+                            use base64::Engine as _;
+                            Some(base64::engine::general_purpose::STANDARD.encode(&buf))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        let _ = h.emit("engine://log", format!("[IA] Erreur capture image pour VLM: {}", e));
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let messages = if let Some(b64) = b64_img {
+                serde_json::json!([
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompt
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": format!("data:image/png;base64,{}", b64)
+                                }
+                            }
+                        ]
+                    }
+                ])
+            } else {
+                serde_json::json!([
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ])
+            };
+
+            let payload = serde_json::json!({
+                "model": b.model_name,
+                "messages": messages
+            });
+
+            let client = reqwest::Client::new();
+            let mut req = client.post(&url);
+            if !b.api_key.is_empty() {
+                req = req.bearer_auth(&b.api_key);
+            }
+
+            let res = req.json(&payload).send().await;
+            let response = match res {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        #[derive(serde::Deserialize)]
+                        struct ChatChoice {
+                            message: ChatMessage,
+                        }
+                        #[derive(serde::Deserialize)]
+                        struct ChatMessage {
+                            content: Option<String>,
+                        }
+                        #[derive(serde::Deserialize)]
+                        struct ChatResponse {
+                            choices: Option<Vec<ChatChoice>>,
+                        }
+
+                        match resp.json::<ChatResponse>().await {
+                            Ok(chat_resp) => {
+                                chat_resp.choices
+                                    .and_then(|c| c.into_iter().next())
+                                    .and_then(|choice| choice.message.content)
+                                    .unwrap_or_else(|| "Réponse vide de l'API".to_string())
+                            }
+                            Err(e) => format!("Erreur désérialisation: {}", e)
+                        }
+                    } else {
+                        let status = resp.status();
+                        let body = resp.text().await.unwrap_or_default();
+                        format!("Erreur API ({}): {}", status, body)
+                    }
+                }
+                Err(e) => format!("Erreur de requête HTTP: {}", e)
+            };
+
             if !b.output_var.is_empty() {
                 vars.insert(b.output_var.clone(), response);
             }
@@ -1127,24 +1249,165 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
         }
 
         Block::Vpo(b) => {
-            // YOLO Object Detection simulation via ort (ONNX model execution)
-            // As we don't pack a physical 50MB YOLO model in user workspace, we check if template models exist
-            // and run a dummy ort Session, falling back to a sample capture match.
-            let matched = if let Ok(monitors) = xcap::Monitor::all() {
-                // If a monitor exists, simulated matched class name contains
-                let mon = &monitors[0];
-                if let Ok(_img) = mon.capture_image() {
-                    b.class_name == "person" // standard default class
-                } else {
-                    false
+            let thresh = b.threshold.parse::<f32>().unwrap_or(0.5);
+            let x = eval_full(&b.x, vars) as i32;
+            let y = eval_full(&b.y, vars) as i32;
+            let w = (eval_full(&b.width, vars) as u32).max(1);
+            let hgt = (eval_full(&b.height, vars) as u32).max(1);
+            let screen = b.screen;
+
+            let model_path = match crate::ipc::download_yolo_model_if_needed(&h, &b.model_name).await {
+                Ok(path) => path,
+                Err(e) => {
+                    let _ = h.emit("engine://log", format!("[VPO] Erreur accès/téléchargement modèle: {}", e));
+                    return Ok("not_found".into());
                 }
-            } else {
-                false
             };
+
+            let cropped = match capture_image_for_ocr(x, y, w, hgt, screen) {
+                Ok(img) => img,
+                Err(e) => {
+                    let _ = h.emit("engine://log", format!("[VPO] Erreur capture image: {}", e));
+                    return Ok("not_found".into());
+                }
+            };
+
+            let dyn_img = image::DynamicImage::ImageRgba8(cropped);
+
+            let config = ultralytics_inference::InferenceConfig::default()
+                .with_confidence(thresh);
+            let mut model = match ultralytics_inference::YOLOModel::load_with_config(&model_path, config) {
+                Ok(m) => m,
+                Err(e) => {
+                    let _ = h.emit("engine://log", format!("[VPO] Erreur chargement modèle YOLO: {}", e));
+                    return Ok("not_found".into());
+                }
+            };
+
+            let results = match model.predict_image(&dyn_img, "frame".to_string()) {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = h.emit("engine://log", format!("[VPO] Erreur prédiction YOLO: {}", e));
+                    return Ok("not_found".into());
+                }
+            };
+
+            // Pre-initialize variables so they are never left empty/unset
             if !b.output_var.is_empty() {
-                vars.insert(b.output_var.clone(), matched.to_string());
+                if b.mode == "classify" {
+                    vars.insert(b.output_var.clone(), "[]".to_string());
+                    vars.insert(format!("{}_json", b.output_var), "{}".to_string());
+                } else {
+                    vars.insert(b.output_var.clone(), "{}".to_string());
+                    vars.insert(format!("{}_classes", b.output_var), "[]".to_string());
+                    vars.insert(format!("{}_simple", b.output_var), "".to_string());
+                }
             }
-            if matched { "found".into() } else { "not_found".into() }
+
+            let mut matched = false;
+
+            if let Some(result) = results.first() {
+                if b.mode == "classify" {
+                    if let Some(ref probs) = result.probs {
+                        let top_indices = probs.top_k(probs.data.len());
+                        let mut class_names = Vec::new();
+                        for cls_id in top_indices {
+                            let conf = *probs.data.get(cls_id).unwrap_or(&0.0);
+                            if conf >= thresh {
+                                if let Some(name) = result.names.get(&cls_id) {
+                                    class_names.push(name.clone());
+                                }
+                            }
+                        }
+
+                        if !b.output_var.is_empty() {
+                            let array_val = serde_json::Value::Array(
+                                class_names.iter().map(|n| serde_json::Value::String(n.clone())).collect()
+                            );
+                            vars.insert(b.output_var.clone(), array_val.to_string());
+                            
+                            // Keep top-1 in _json if it meets threshold
+                            let cls_id = probs.top1();
+                            let conf = probs.top1conf();
+                            if conf >= thresh {
+                                let top_name = result.names.get(&cls_id).map(|s| s.as_str()).unwrap_or("unknown").to_string();
+                                let full_json = serde_json::json!({
+                                    "class": top_name,
+                                    "confidence": conf
+                                });
+                                vars.insert(format!("{}_json", b.output_var), full_json.to_string());
+                            } else {
+                                vars.insert(format!("{}_json", b.output_var), "{}".to_string());
+                            }
+                        }
+
+                        if !b.class_name.is_empty() {
+                            let target_class = b.class_name.trim();
+                            matched = class_names.iter().any(|name| name.eq_ignore_ascii_case(target_class));
+                        }
+                    } else {
+                        let _ = h.emit("engine://log", "[VPO] Modèle n'a pas produit de classification (probs) de type classify".to_string());
+                    }
+                } else {
+                    // mode == "detect"
+                    if let Some(ref boxes) = result.boxes {
+                        let xyxy_matrix = boxes.xyxy();
+                        let mut detection_dict: std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>> = std::collections::HashMap::new();
+
+                        for i in 0..boxes.len() {
+                            let conf = boxes.conf()[i];
+                            if conf < thresh {
+                                continue;
+                            }
+                            let cls = boxes.cls()[i] as usize;
+                            let name = result.names.get(&cls).map(|s| s.as_str()).unwrap_or("unknown").to_string();
+
+                            let b_coords = xyxy_matrix.row(i);
+                            let x = b_coords[0].round() as i32;
+                            let y = b_coords[1].round() as i32;
+                            let w = (b_coords[2] - b_coords[0]).round() as i32;
+                            let h = (b_coords[3] - b_coords[1]).round() as i32;
+                            let conf_pct = (conf * 100.0).round() as i32;
+
+                            let box_val = serde_json::json!({
+                                "bbox": [x, y, w, h],
+                                "conf": conf_pct
+                            });
+
+                            let class_entry = detection_dict.entry(name).or_default();
+                            let index_str = class_entry.len().to_string();
+                            class_entry.insert(index_str, box_val);
+                        }
+
+                        let dict_val = serde_json::to_value(&detection_dict).unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                        if !b.output_var.is_empty() {
+                            vars.insert(b.output_var.clone(), dict_val.to_string());
+
+                            let mut detected_classes: Vec<String> = detection_dict.keys().cloned().collect();
+                            detected_classes.sort();
+                            let classes_str = detected_classes.join(", ");
+                            let classes_json = serde_json::Value::Array(
+                                detected_classes.into_iter().map(serde_json::Value::String).collect()
+                            );
+                            vars.insert(format!("{}_classes", b.output_var), classes_json.to_string());
+                            vars.insert(format!("{}_simple", b.output_var), classes_str);
+                        }
+
+                        if !b.class_name.is_empty() {
+                            let target_class = b.class_name.trim();
+                            matched = detection_dict.contains_key(target_class);
+                        }
+                    } else {
+                        let _ = h.emit("engine://log", "[VPO] Modèle n'a pas produit de détection (boxes) de type detect".to_string());
+                    }
+                }
+            }
+
+            if !b.class_name.is_empty() {
+                if matched { "found".into() } else { "not_found".into() }
+            } else {
+                "".into()
+            }
         }
     };
 

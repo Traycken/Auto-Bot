@@ -88,7 +88,13 @@ interface EditorStore {
   saveRestartSnapshotWithNodePatch: (id: string, patch: Record<string, unknown>) => void;
   initEngineListeners: () => () => void;
 
+  past: Array<{ tabs: Tab[]; variables: VarEntry[] }>;
+  future: Array<{ tabs: Tab[]; variables: VarEntry[] }>;
+  pushHistory: (force?: boolean) => void;
+  undo: () => void;
+  redo: () => void;
   saveActiveTab: () => Promise<void>;
+  saveActiveTabAs: () => Promise<void>;
   openSequence: () => Promise<void>;
   openFunction: () => Promise<void>;
   openSequenceWithPath: (path: string) => Promise<void>;
@@ -101,6 +107,7 @@ interface EditorStore {
   pasteNodes: () => void;
   translations: Record<string, string>;
   loadTranslations: (lang: string) => Promise<void>;
+  t: (key: string, defaultValue?: string) => string;
 
   activeNodeId: string | null;
   lastNodeId: string | null;
@@ -274,6 +281,8 @@ function loadRestartSnapshot(): Partial<Pick<EditorStore, "tabs" | "activeTabId"
 }
 
 const restartSnapshot = loadRestartSnapshot();
+let historyTimeout: any = null;
+let lastHistoryState: string | null = null;
 
 export const useEditorStore = create<EditorStore>((originalSet, get) => {
   // Override set locally so all actions automatically trigger the update of nodes & edges
@@ -372,11 +381,109 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
     edges: initialEdges,
     selectedNodeId: restartSnapshot?.selectedNodeId ?? null,
     status: "idle",
+    past: [],
+    future: [],
+    pushHistory(force = false) {
+      const { tabs, variables, past } = get();
+      const stateStr = JSON.stringify({ tabs, variables });
+      
+      if (lastHistoryState === stateStr) {
+        return;
+      }
+
+      if (historyTimeout && force) {
+        clearTimeout(historyTimeout);
+        historyTimeout = null;
+      }
+      
+      if (!historyTimeout) {
+        const clonedTabs = JSON.parse(JSON.stringify(tabs));
+        const clonedVars = JSON.parse(JSON.stringify(variables));
+        
+        if (past.length > 0) {
+          const last = past[past.length - 1];
+          if (JSON.stringify(last.tabs) === JSON.stringify(clonedTabs) && JSON.stringify(last.variables) === JSON.stringify(clonedVars)) {
+            return;
+          }
+        }
+
+        const newPast = [...past, { tabs: clonedTabs, variables: clonedVars }];
+        if (newPast.length > 50) newPast.shift();
+        originalSet({ past: newPast, future: [] });
+        lastHistoryState = stateStr;
+      }
+      
+      if (!force) {
+        if (historyTimeout) clearTimeout(historyTimeout);
+        historyTimeout = setTimeout(() => {
+          historyTimeout = null;
+        }, 800);
+      }
+    },
+
+    undo() {
+      const { past, future, tabs, variables } = get();
+      if (past.length === 0) return;
+      
+      if (historyTimeout) {
+        clearTimeout(historyTimeout);
+        historyTimeout = null;
+      }
+
+      const currentCloned = {
+        tabs: JSON.parse(JSON.stringify(tabs)),
+        variables: JSON.parse(JSON.stringify(variables)),
+      };
+      
+      const previous = past[past.length - 1];
+      const newPast = past.slice(0, past.length - 1);
+      const newFuture = [currentCloned, ...future];
+      
+      set({
+        tabs: previous.tabs,
+        variables: previous.variables,
+        past: newPast,
+        future: newFuture,
+      });
+      
+      lastHistoryState = JSON.stringify({ tabs: previous.tabs, variables: previous.variables });
+    },
+
+    redo() {
+      const { past, future, tabs, variables } = get();
+      if (future.length === 0) return;
+      
+      if (historyTimeout) {
+        clearTimeout(historyTimeout);
+        historyTimeout = null;
+      }
+
+      const currentCloned = {
+        tabs: JSON.parse(JSON.stringify(tabs)),
+        variables: JSON.parse(JSON.stringify(variables)),
+      };
+
+      const next = future[0];
+      const newFuture = future.slice(1);
+      const newPast = [...past, currentCloned];
+      
+      set({
+        tabs: next.tabs,
+        variables: next.variables,
+        past: newPast,
+        future: newFuture,
+      });
+      
+      lastHistoryState = JSON.stringify({ tabs: next.tabs, variables: next.variables });
+    },
     log: [],
     cmdHistory: {},
     variables: restartSnapshot?.variables ?? [],
     clipboard: [],
     translations: {},
+    t(key: string, defaultValue?: string) {
+      return get().translations[key] ?? defaultValue ?? key;
+    },
     activeNodeId: null,
     lastNodeId: null,
     waitProgress: {},
@@ -436,6 +543,7 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   },
 
   renameTab(id, name) {
+    get().pushHistory(true);
     const safe = name.replace(/[^a-zA-Z0-9_\- ]/g, "").trim();
     if (!safe) return;
     set(s => ({
@@ -446,6 +554,7 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   // ── Convert tab kind ───────────────────────────────────────────────────────
 
   convertActiveTab() {
+    get().pushHistory(true);
     const { tabs, activeTabId } = get();
     const tab = tabs.find(t => t.id === activeTabId);
     if (!tab) return;
@@ -523,6 +632,13 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   // ── React Flow handlers ────────────────────────────────────────────────────
 
   onNodesChange(changes) {
+    const hasStructuralChange = changes.some(c => c.type === "remove");
+    const hasPositionChange = changes.some(c => c.type === "position");
+    if (hasStructuralChange) {
+      get().pushHistory(true);
+    } else if (hasPositionChange) {
+      get().pushHistory(false);
+    }
     // Auto-select node when it finishes being moved (drag end)
     const dragEnd = changes.find(c => c.type === "position" && !(c as any).dragging);
     const newSel = dragEnd ? (dragEnd as any).id as string : undefined;
@@ -533,6 +649,10 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   },
 
   onEdgesChange(changes) {
+    const hasStructuralChange = changes.some(c => c.type === "remove");
+    if (hasStructuralChange) {
+      get().pushHistory(true);
+    }
     set(s => ({ tabs: updateActiveTab(s, t => ({ edges: applyEdgeChanges(changes, t.edges) })) }));
   },
 
@@ -541,16 +661,15 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
       console.warn("Self-connections are blocked.");
       return;
     }
+    get().pushHistory(true);
     set(s => ({
       tabs: updateActiveTab(s, t => {
-        // Filter out only exact duplicate connections
+        // Filter out any existing edge that starts from the same output handle (source/sourceHandle)
         const filtered = t.edges.filter(e => {
-          const isExactSame =
+          const isSameSourceHandle =
             e.source === connection.source &&
-            (e.sourceHandle ?? null) === (connection.sourceHandle ?? null) &&
-            e.target === connection.target &&
-            (e.targetHandle ?? null) === (connection.targetHandle ?? null);
-          return !isExactSame;
+            (e.sourceHandle ?? null) === (connection.sourceHandle ?? null);
+          return !isSameSourceHandle;
         });
         return { edges: addEdge({ ...connection, type: "smoothstep" }, filtered) };
       }),
@@ -569,6 +688,7 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
     const unique = ["start", "function_args", "function_return"];
     if (unique.includes(kind) && activeTab.nodes.some(n => n.data.kind === kind)) return;
 
+    get().pushHistory(true);
     const node: MacroNode = {
       id: uid(),
       type: nodeTypeForKind(kind),
@@ -580,6 +700,7 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   },
 
   updateNodeData(id, patch) {
+    get().pushHistory(false);
     set(s => ({
       tabs: updateActiveTab(s, t => ({
         nodes: t.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, ...patch } } as MacroNode : n),
@@ -588,6 +709,7 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   },
 
   removeNode(id) {
+    get().pushHistory(true);
     set(s => ({
       tabs: updateActiveTab(s, t => ({
         nodes: t.nodes.filter(n => n.id !== id),
@@ -692,6 +814,7 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   },
 
   setVariable(name, value, description = "") {
+    get().pushHistory(true);
     set(s => {
       const existing = s.variables.findIndex(v => v.name === name);
       if (existing >= 0) {
@@ -700,7 +823,10 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
       return { variables: [...s.variables, { name, value, description }] };
     });
   },
-  removeVariable(name) { set(s => ({ variables: s.variables.filter(v => v.name !== name) })); },
+  removeVariable(name) {
+    get().pushHistory(true);
+    set(s => ({ variables: s.variables.filter(v => v.name !== name) }));
+  },
 
   // ── Persistence ────────────────────────────────────────────────────────────
 
@@ -711,20 +837,85 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
     if (tab.kind === "function") {
       await saveFunction(activeTabId);
     } else {
+      if (tab.filePath) {
+        try {
+          const data = JSON.stringify({ nodes: tab.nodes, edges: tab.edges, variables: get().variables }, null, 2);
+          await invoke("write_text_file_native", { path: tab.filePath, content: data });
+          set(s => ({ tabs: s.tabs.map(t => t.id === activeTabId ? { ...t, dirty: false } : t) }));
+          get().pushLog({ level: "ok", message: `Sauvegardé : ${tab.filePath}` });
+        } catch (e) {
+          get().pushLog({ level: "error", message: `Erreur sauvegarde: ${String(e)}` });
+        }
+      } else {
+        try {
+          const { save } = await import("@tauri-apps/plugin-dialog");
+          const path = await save({
+            title: "Sauvegarder la séquence",
+            filters: [{ name: "Auto Bot Sequence", extensions: ["absqc"] }],
+            defaultPath: `${tab.name}.absqc`,
+          });
+          if (!path) return;
+          const data = JSON.stringify({ nodes: tab.nodes, edges: tab.edges, variables: get().variables }, null, 2);
+          await invoke("write_text_file_native", { path, content: data });
+          set(s => ({ tabs: s.tabs.map(t => t.id === activeTabId ? { ...t, dirty: false, filePath: path } : t) }));
+          get().pushLog({ level: "ok", message: `Sauvegardé : ${path}` });
+        } catch (e) {
+          get().pushLog({ level: "error", message: `Erreur sauvegarde: ${String(e)}` });
+        }
+      }
+    }
+  },
+
+  async saveActiveTabAs() {
+    const { tabs, activeTabId } = get();
+    const tab = tabs.find(t => t.id === activeTabId);
+    if (!tab) return;
+    if (tab.kind === "function") {
+      try {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const chosen = await save({
+          title: "Sauvegarder la fonction sous...",
+          filters: [{ name: "Auto Bot Function", extensions: ["abfnc"] }],
+          defaultPath: tab.filePath || `${tab.name}.abfnc`,
+        });
+        if (!chosen) return;
+        const newName = chosen.split(/[/\\]/).pop()?.replace(/\.abfnc$/, "") ?? tab.name;
+
+        const argsNode = tab.nodes.find(n => n.data.kind === "function_args");
+        const args = (argsNode?.data as { args?: unknown[] })?.args ?? [];
+        const payload = {
+          name: newName, args,
+          nodes: tab.nodes.map(n => ({ id: n.id, position: n.position, data: n.data })),
+          edges: tab.edges.map(e => ({
+            id: e.id, source: e.source, target: e.target,
+            sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null,
+          })),
+        };
+
+        await invoke("write_text_file_native", { path: chosen, content: JSON.stringify(payload, null, 2) });
+        set(s => ({
+          tabs: s.tabs.map(t => t.id === activeTabId ? { ...t, name: newName, dirty: false, filePath: chosen } : t),
+        }));
+        get().pushLog({ level: "ok", message: `Fonction sauvegardée : ${chosen}` });
+      } catch (e) {
+        get().pushLog({ level: "error", message: `Erreur enregistrer sous fonction: ${String(e)}` });
+      }
+    } else {
       try {
         const { save } = await import("@tauri-apps/plugin-dialog");
         const path = await save({
-          title: "Sauvegarder la séquence",
+          title: "Sauvegarder la séquence sous...",
           filters: [{ name: "Auto Bot Sequence", extensions: ["absqc"] }],
-          defaultPath: `${tab.name}.absqc`,
+          defaultPath: tab.filePath || `${tab.name}.absqc`,
         });
         if (!path) return;
+        const newName = path.split(/[/\\]/).pop()?.replace(/\.absqc$/, "") ?? tab.name;
         const data = JSON.stringify({ nodes: tab.nodes, edges: tab.edges, variables: get().variables }, null, 2);
         await invoke("write_text_file_native", { path, content: data });
-        set(s => ({ tabs: s.tabs.map(t => t.id === activeTabId ? { ...t, dirty: false, filePath: path } : t) }));
+        set(s => ({ tabs: s.tabs.map(t => t.id === activeTabId ? { ...t, name: newName, dirty: false, filePath: path } : t) }));
         get().pushLog({ level: "ok", message: `Sauvegardé : ${path}` });
       } catch (e) {
-        get().pushLog({ level: "error", message: `Erreur sauvegarde: ${String(e)}` });
+        get().pushLog({ level: "error", message: `Erreur enregistrer sous: ${String(e)}` });
       }
     }
   },
@@ -1055,7 +1246,14 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
   // ── Engine listeners ───────────────────────────────────────────────────────
 
   initEngineListeners() {
-    get().loadTranslations("fr");
+    invoke<{ language?: string }>("get_settings")
+      .then(settings => {
+        const lang = settings.language || "fr";
+        get().loadTranslations(lang);
+      })
+      .catch(() => {
+        get().loadTranslations("fr");
+      });
     const unsubs: Array<() => void> = [];
     const sub = (evt: string, fn: (p: any) => void) =>
       listen(evt, e => fn(e.payload)).then(u => unsubs.push(u));
@@ -1080,6 +1278,26 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
           lastNodeId: s.activeNodeId,
           activeNodeId: payload.node_id ?? null
         }));
+
+        // Capture screenshot of the selected zone during execution
+        const activeTab = get().tabs.find(t => t.id === get().activeTabId);
+        const node = activeTab?.nodes.find(n => n.id === payload.node_id);
+        if (node) {
+          const kind = node.data?.kind as string;
+          const data = node.data as any;
+          if (kind === "ocr" || kind === "vpo" || (kind === "ia" && data.mode === "image") || kind === "image_match") {
+            const x = Number(kind === "image_match" ? data.region_x : data.x) || 0;
+            const y = Number(kind === "image_match" ? data.region_y : data.y) || 0;
+            const w = Number(kind === "image_match" ? data.region_w : data.width) || 300;
+            const h = Number(kind === "image_match" ? data.region_h : data.height) || 100;
+            const screen = Number(data.screen) || 0;
+            invoke<string>("capture_region", { x, y, width: w, height: h, screen })
+              .then(b64 => {
+                get().updateNodeData(node.id, { last_capture: b64 });
+              })
+              .catch(() => {});
+          }
+        }
       }
       get().pushLog({ level: "run",  message: `→ ${payload.kind ?? "?"}` });
     });

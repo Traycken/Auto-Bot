@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import { useNodeWidth } from "../store/editorStore";
+import { useNodeWidth, t } from "../store/editorStore";
 
 interface FunctionCallData {
   function_name: string;
@@ -37,7 +37,7 @@ export const FunctionCallNode = memo(function FunctionCallNode({ data, selected 
           <i className="ti ti-function" style={{ fontSize:11, color:"#fff" }} />
         </div>
         <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>
-          {d.function_name ? `${d.function_name}${d.alias ? ` (${d.alias})` : ""}` : <span style={{ color:"#3a2a4e", fontStyle:"italic" }}>choisir…</span>}
+          {d.function_name ? `${d.function_name}${d.alias ? ` (${d.alias})` : ""}` : <span style={{ color:"#3a2a4e", fontStyle:"italic" }}>{t("node.function_call.choose", "choisir…")}</span>}
         </span>
         <span style={{ fontSize:9, color:C, background:`${C}22`, padding:"1px 5px", borderRadius:4, flexShrink:0, marginRight:4 }}>fn</span>
         <button
@@ -45,7 +45,7 @@ export const FunctionCallNode = memo(function FunctionCallNode({ data, selected 
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "function_call" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:16, height:16, borderRadius:4, background:"transparent",
             border:"0.5px solid #3a2a4e", cursor:"pointer", display:"flex",
@@ -60,7 +60,7 @@ export const FunctionCallNode = memo(function FunctionCallNode({ data, selected 
       {/* Args summary */}
       <div style={{ padding:"6px 10px 4px" }}>
         {args.length === 0
-          ? <span style={{ fontSize:9, color:"#2a1a3e" }}>aucun argument</span>
+          ? <span style={{ fontSize:9, color:"#2a1a3e" }}>{t("node.function_args.none", "aucun argument")}</span>
           : args.slice(0, 3).map((a, i) => (
               <div key={i} style={{ display:"flex", alignItems:"center", gap:4, marginBottom:2 }}>
                 <span style={{ fontSize:9, color:`${C}88`, minWidth:50, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.name}:</span>
@@ -68,7 +68,7 @@ export const FunctionCallNode = memo(function FunctionCallNode({ data, selected 
               </div>
             ))
         }
-        {args.length > 3 && <span style={{ fontSize:9, color:"#3a2a4e" }}>+{args.length - 3} autres…</span>}
+        {args.length > 3 && <span style={{ fontSize:9, color:"#3a2a4e" }}>+{args.length - 3} {t("node.function_call.others", "autres…")}</span>}
       </div>
 
       {/* Return var */}

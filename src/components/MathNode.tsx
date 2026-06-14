@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import { useNodeWidth } from "../store/editorStore";
+import { useNodeWidth, t } from "../store/editorStore";
 
 interface MathData { target_var: string; expression: string; [key: string]: unknown; }
 
@@ -35,14 +35,14 @@ export const MathNode = memo(function MathNode({ data, selected }: NodeProps) {
           <i className="ti ti-calculator" style={{ fontSize:11, color:"#fff" }} />
         </div>
         <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11, flex:1 }}>
-          Math{d.alias ? ` (${d.alias})` : ""}
+          {t("node.math", "Math")}{d.alias ? ` (${d.alias})` : ""}
         </span>
         <button
           onClick={(e) => {
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "math" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:16, height:16, borderRadius:4, background:"transparent",
             border:"0.5px solid #333", cursor:"pointer", display:"flex",

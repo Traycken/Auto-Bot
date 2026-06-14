@@ -68,6 +68,7 @@ pub fn run() {
             ipc::get_cursor_position,
             // Region selector
             ipc::select_screen_region,
+            ipc::get_screen_index_for_position,
             ipc::submit_region_selection,
             ipc::cancel_region_selection,
             ipc::request_cmd_admin_access,
@@ -87,6 +88,13 @@ pub fn run() {
             ipc::test_image_match,
             ipc::test_ocr,
             ipc::set_webview_zoom,
+            ipc::list_yolo_models,
+            ipc::import_yolo_model,
+            ipc::test_ia,
+            ipc::discover_ia_models,
+            ipc::test_yolo,
+            ipc::recreate_yolo_venv,
+            ipc::get_uv_python_versions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Auto Bot");

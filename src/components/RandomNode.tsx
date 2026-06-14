@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import { useNodeWidth } from "../store/editorStore";
+import { useNodeWidth, t } from "../store/editorStore";
 
 interface RandomData { mode: string; min: string; max: string; output_var: string; use_seed: boolean; seed: string; list_items: string; [key: string]: unknown; }
 
@@ -18,7 +18,7 @@ export const RandomNode = memo(function RandomNode({ data, selected }: NodeProps
           <i className="ti ti-dice" style={{ fontSize: 11, color: "#fff" }} />
         </div>
         <span style={{ fontWeight: 500, color: "#e0e0e0", fontSize: 11 }}>
-          Aléatoire{d.alias ? ` (${d.alias})` : ""}
+          {t("node.random", "Aléatoire")}{d.alias ? ` (${d.alias})` : ""}
         </span>
         <span style={{ marginLeft: "auto", fontSize: 9, color: C, background: `${C}22`, padding: "1px 6px", borderRadius: 4, marginRight: 5 }}>{d.mode?.toUpperCase()}</span>
         <button
@@ -26,7 +26,7 @@ export const RandomNode = memo(function RandomNode({ data, selected }: NodeProps
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "random" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:16, height:16, borderRadius:4, background:"transparent",
             border:"0.5px solid #333", cursor:"pointer", display:"flex",
@@ -39,7 +39,7 @@ export const RandomNode = memo(function RandomNode({ data, selected }: NodeProps
       </div>
       <div style={{ padding: "7px 10px 9px", fontSize: 10 }}>
         {d.mode === "list"
-          ? <div style={{ color: "#888" }}>liste: <span style={{ color: "#EF9F27" }}>{(d.list_items || "").split(",").length} éléments</span></div>
+          ? <div style={{ color: "#888" }}>{t("node.random.list", "liste:")} <span style={{ color: "#EF9F27" }}>{(d.list_items || "").split(",").length} {t("node.random.elements", "éléments")}</span></div>
           : <div style={{ color: "#888" }}>
               <span style={{ color: "#EF9F27" }}>{d.min}</span>
               <span style={{ color: "#555" }}> → </span>

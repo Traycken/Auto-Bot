@@ -4,7 +4,8 @@
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useEditorStore } from "../store/editorStore";
+import { useEditorStore, t } from "../store/editorStore";
+
 
 // ── Types internes ────────────────────────────────────────────────────────────
 
@@ -112,14 +113,14 @@ function DropMenu({
 
 // ── MenuBar principal ─────────────────────────────────────────────────────────
 
-export function MenuBar({ onOpenHelp, onOpenSettings }: { onOpenHelp?: () => void; onOpenSettings?: () => void }) {
+export function MenuBar({ onOpenHelp, onOpenSettings, onOpenAbout }: { onOpenHelp?: () => void; onOpenSettings?: () => void; onOpenAbout?: () => void }) {
   const {
     tabs, activeTabId,
     addMainTab, addFunctionTab,
-    saveActiveTab, openAny,
+    saveActiveTab, saveActiveTabAs, openAny,
     runSequence, stopSequence,
     convertActiveTab,
-    status,
+    status, undo, redo,
   } = useEditorStore();
 
   const [openMenu, setOpenMenu] = useState<MenuId>(null);
@@ -183,13 +184,13 @@ export function MenuBar({ onOpenHelp, onOpenSettings }: { onOpenHelp?: () => voi
 
   const menuFichier: ItemDef[] = [
     {
-      label: "Nouvelle séquence",
+      label: t("menu.new_sequence", "Nouvelle séquence"),
       icon: "ti-layout-board",
       shortcut: "",
       action: addMainTab,
     },
     {
-      label: "Nouvelle fonction",
+      label: t("menu.new_function", "Nouvelle fonction"),
       icon: "ti-function",
       action: () => {
         addFunctionTab("fonction_temp");
@@ -197,35 +198,53 @@ export function MenuBar({ onOpenHelp, onOpenSettings }: { onOpenHelp?: () => voi
     },
     { separator: true },
     {
-      label: "Ouvrir…",
+      label: t("menu.open_dot", "Ouvrir…"),
       icon: "ti-folder-open",
       action: openAny,
     },
     { separator: true },
     {
-      label: "Sauvegarder",
+      label: t("menu.save", "Sauvegarder"),
       icon: "ti-device-floppy",
       shortcut: "Ctrl+S",
       action: saveActiveTab,
+    },
+    {
+      label: t("menu.save_as", "Enregistrer sous…"),
+      icon: "ti-device-floppy",
+      action: saveActiveTabAs,
     },
   ];
 
   const menuEdition: ItemDef[] = [
     {
+      label: t("menu.undo", "Annuler (Undo)"),
+      icon: "ti-arrow-back-up",
+      shortcut: "Ctrl+Z",
+      action: undo,
+    },
+    {
+      label: t("menu.redo", "Rétablir (Redo)"),
+      icon: "ti-arrow-forward-up",
+      shortcut: "Ctrl+Y / Ctrl+Shift+Z",
+      action: redo,
+    },
+    { separator: true },
+    {
       label: isMain
-        ? "Convertir en fonction"
-        : "Convertir en séquence",
+        ? t("menu.convert_to_function", "Convertir en fonction")
+        : t("menu.convert_to_sequence", "Convertir en séquence"),
       icon: isMain ? "ti-arrows-exchange" : "ti-arrows-exchange",
       action: () => {
         const msg = isMain
-          ? "Convertir cette séquence en fonction ?\n\nLe nœud Départ sera remplacé par Arguments et un nœud Retour sera ajouté."
-          : "Convertir cette fonction en séquence ?\n\nLe nœud Arguments sera remplacé par Départ et le nœud Retour sera supprimé.";
+          ? t("menu.confirm_convert_to_function", "Convertir cette séquence en fonction ?\n\nLe nœud Départ sera remplacé par Arguments et un nœud Retour sera ajouté.")
+          : t("menu.confirm_convert_to_sequence", "Convertir cette fonction en séquence ?\n\nLe nœud Arguments sera remplacé par Départ et le nœud Retour sera supprimé.");
         if (window.confirm(msg)) convertActiveTab();
       },
     },
     { separator: true },
     {
-      label: isRunning ? "Arrêter l'exécution" : "Exécuter la séquence",
+      label: isRunning ? t("menu.stop", "Arrêter l'exécution") : t("menu.run", "Exécuter la séquence"),
       icon: isRunning ? "ti-player-stop" : "ti-player-play",
       shortcut: "F6",
       disabled: !isMain && !isRunning,
@@ -235,43 +254,45 @@ export function MenuBar({ onOpenHelp, onOpenSettings }: { onOpenHelp?: () => voi
 
   const menuOptions: ItemDef[] = [
     {
-      label: "Paramètres",
+      label: t("menu.settings", "Paramètres"),
       icon: "ti-settings",
       action: () => onOpenSettings?.(),
     },
     { separator: true },
     {
-      label: "Vider le journal",
+      label: t("menu.clear_log", "Vider le journal"),
       icon: "ti-trash",
       action: () => useEditorStore.getState().clearLog(),
     },
     { separator: true },
     {
-      label: "À propos",
+      label: t("menu.about", "À propos"),
       icon: "ti-info-circle",
-      action: () => window.alert("Auto Bot v0.1\nÉditeur de macros visuelles\nRust · Tauri 2 · React"),
+      action: () => {
+        onOpenAbout?.();
+      },
     },
   ];
 
   const menuAides: ItemDef[] = [
     {
-      label: "Documentation des blocs",
+      label: t("menu.docs", "Documentation des blocs"),
       icon: "ti-book",
       action: () => onOpenHelp?.(),
     },
     { separator: true },
     {
-      label: "Raccourcis clavier",
+      label: t("menu.shortcuts", "Raccourcis clavier"),
       icon: "ti-keyboard",
       action: () => onOpenHelp?.(),
     },
   ];
 
   const menus: { id: MenuId; label: string; items: ItemDef[] }[] = [
-    { id: "fichier",  label: "Fichier",  items: menuFichier },
-    { id: "edition",  label: "Édition",  items: menuEdition },
-    { id: "options",  label: "Options",  items: menuOptions },
-    { id: "aides",    label: "Aides",    items: menuAides },
+    { id: "fichier",  label: t("menu.file", "Fichier"),  items: menuFichier },
+    { id: "edition",  label: t("menu.edit", "Édition"),  items: menuEdition },
+    { id: "options",  label: t("menu.options", "Options"),  items: menuOptions },
+    { id: "aides",    label: t("menu.help", "Aides"),    items: menuAides },
   ];
 
   return (

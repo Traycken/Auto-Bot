@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { useNodeWidth, useEditorStore } from "../store/editorStore";
+import { useNodeWidth, useEditorStore, t } from "../store/editorStore";
 
 interface SwitchData {
   expression: string;
@@ -36,14 +36,14 @@ export const SwitchNode = memo(function SwitchNode({ id, data, selected }: NodeP
           <i className="ti ti-git-commit" style={{ fontSize: 11, color: "#fff" }} />
         </div>
         <span style={{ fontWeight: 500, color: "#e0e0e0", fontSize: 11, flex: 1 }}>
-          Switch{d.alias ? ` (${d.alias})` : ""}
+          {t("node.switch", "Switch")}{d.alias ? ` (${d.alias})` : ""}
         </span>
         <button
           onClick={(e) => {
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "switch" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:16, height:16, borderRadius:4, background:"transparent",
             border:"0.5px solid #333", cursor:"pointer", display:"flex",
@@ -58,7 +58,7 @@ export const SwitchNode = memo(function SwitchNode({ id, data, selected }: NodeP
       {/* Expression Preview */}
       <div style={{ padding: "8px 10px", fontSize: 10, borderBottom: "0.5px solid #2a2a2e" }}>
         <span style={{ color: "#888" }}>Eval: </span>
-        <span style={{ color: "#fff" }}>{d.expression || "vide"}</span>
+        <span style={{ color: "#fff" }}>{d.expression || t("node.if.empty", "vide")}</span>
       </div>
 
       {/* Dynamic Cases */}
@@ -73,7 +73,7 @@ export const SwitchNode = memo(function SwitchNode({ id, data, selected }: NodeP
             borderBottom: "0.5px solid #1a1a1e",
             position: "relative"
           }}>
-            <span style={{ fontSize: 10, color: "#aaa" }}>cas: {c}</span>
+            <span style={{ fontSize: 10, color: "#aaa" }}>{t("node.switch.case", "cas:")} {c}</span>
             <Handle
               type="source"
               id={c}
@@ -100,7 +100,7 @@ export const SwitchNode = memo(function SwitchNode({ id, data, selected }: NodeP
           padding: "0 10px",
           position: "relative"
         }}>
-          <span style={{ fontSize: 10, color: "#E24B4A", fontWeight: "bold" }}>défaut</span>
+          <span style={{ fontSize: 10, color: "#E24B4A", fontWeight: "bold" }}>{t("node.switch.default", "défaut")}</span>
           <Handle
             type="source"
             id="DefaultCase"

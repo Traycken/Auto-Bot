@@ -4,6 +4,7 @@
  * shows shifted/AltGr characters dynamically.
  */
 import { useState, useCallback } from "react";
+import { t } from "../store/editorStore";
 
 // ── Key definitions ────────────────────────────────────────────────────────────
 
@@ -220,7 +221,7 @@ export function KeyboardModal({ onConfirm, onClose }: Props) {
       <div style={S.modal}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#e0e0e0" }}>Sélectionner une touche / combinaison</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: "#e0e0e0" }}>{t("kb.select_title", "Sélectionner une touche / combinaison")}</span>
           <div style={{ display: "flex", gap: 6 }}>
             {(["azerty", "qwerty"] as const).map(l => (
               <button key={l} onClick={() => setLayout(l)} style={{
@@ -239,14 +240,14 @@ export function KeyboardModal({ onConfirm, onClose }: Props) {
           <span style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em" }}>Combo:</span>
           <div style={{ flex: 1, display: "flex", gap: 4, flexWrap: "wrap" }}>
             {combo.length === 0
-              ? <span style={{ color: "#333", fontSize: 11 }}>— clique sur les touches —</span>
+              ? <span style={{ color: "#333", fontSize: 11 }}>{t("kb.click_keys_hint", "— clique sur les touches —")}</span>
               : combo.map((c, i) => (
                   <span key={i} style={{ background: "#E84C1E22", border: "0.5px solid #E84C1E", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: "#E84C1E" }}>{c}</span>
                 ))
             }
           </div>
           {combo.length > 0 && (
-            <button onClick={removeLastCombo} style={{ fontSize: 10, padding: "2px 7px", cursor: "pointer", background: "none", border: "0.5px solid #2a2a2e", borderRadius: 4, color: "#666" }}>⌫ annuler</button>
+            <button onClick={removeLastCombo} style={{ fontSize: 10, padding: "2px 7px", cursor: "pointer", background: "none", border: "0.5px solid #2a2a2e", borderRadius: 4, color: "#666" }}>{t("vars.cancel", "⌫ annuler")}</button>
           )}
         </div>
 
@@ -311,13 +312,13 @@ export function KeyboardModal({ onConfirm, onClose }: Props) {
         {/* Confirm / Clear */}
         <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
           <button onClick={() => { setCombo([]); setPressed(new Set()); }} style={{ padding: "6px 14px", fontSize: 11, cursor: "pointer", background: "none", border: "0.5px solid #2a2a2e", borderRadius: 6, color: "#666", fontFamily: "monospace" }}>
-            Effacer
+            {t("kb.clear", "Effacer")}
           </button>
           <button
             onClick={() => { if (combo.length > 0) { onConfirm(combo.join(",")); onClose(); } }}
             disabled={combo.length === 0}
             style={{ padding: "6px 18px", fontSize: 11, cursor: combo.length > 0 ? "pointer" : "not-allowed", background: combo.length > 0 ? "#E84C1E" : "#111", border: "0.5px solid #E84C1E", borderRadius: 6, color: "#fff", fontFamily: "monospace", opacity: combo.length === 0 ? 0.4 : 1 }}>
-            Confirmer
+            {t("kb.confirm", "Confirmer")}
           </button>
         </div>
       </div>

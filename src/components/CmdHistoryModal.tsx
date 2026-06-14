@@ -1,4 +1,4 @@
-import { useEditorStore, type CmdLogEntry } from "../store/editorStore";
+import { useEditorStore, t, type CmdLogEntry } from "../store/editorStore";
 
 interface Props {
   nodeId: string;
@@ -58,7 +58,7 @@ export function CmdHistoryModal({ nodeId, onClose }: Props) {
         }}>
           <span style={{ fontSize: 12, color: "#ccc", fontFamily: "monospace" }}>
             <i className="ti ti-terminal-2" style={{ marginRight: 6 }} />
-            Historique console
+            {t("cmd.history_title", "Historique console")}
           </span>
           <button onClick={onClose} style={{
             background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 16,
@@ -67,7 +67,7 @@ export function CmdHistoryModal({ nodeId, onClose }: Props) {
         <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
           {history.length === 0 ? (
             <p style={{ fontSize: 11, color: "#444", textAlign: "center", marginTop: 30 }}>
-              Aucune exécution enregistrée pour ce bloc.
+              {t("cmd.no_execution", "Aucune exécution enregistrée pour ce bloc.")}
             </p>
           ) : (
             [...history].reverse().map((entry, i) => entryBlock(entry, i))

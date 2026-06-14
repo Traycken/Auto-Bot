@@ -1,0 +1,12 @@
+{
+  "tesseract_path": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
+  "shortcuts": [],
+  "python_envs": [
+    {
+      "name": "venv(3.12.12)",
+      "dir": "C:\\Users\\juju4\\Desktop\\Python_Script\\venv\\Scripts"
+    }
+  ],
+  "edge_thickness": 7,
+  "language": "fr"
+}

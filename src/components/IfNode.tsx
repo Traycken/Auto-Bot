@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import { useNodeWidth } from "../store/editorStore";
+import { useNodeWidth, t } from "../store/editorStore";
 
 interface IfData { condition: string; [key: string]: unknown; }
 
@@ -37,14 +37,14 @@ export const IfNode = memo(function IfNode({ data, selected }: NodeProps) {
           <i className="ti ti-git-branch" style={{ fontSize:11, color:"#fff" }} />
         </div>
         <span style={{ fontWeight:500, color:"#e0e0e0", fontSize:11, flex:1 }}>
-          Si (If){d.alias ? ` (${d.alias})` : ""}
+          {t("node.if", "Si (If)")}{d.alias ? ` (${d.alias})` : ""}
         </span>
         <button
           onClick={(e) => {
             e.stopPropagation();
             window.dispatchEvent(new CustomEvent("open-help", { detail: { kind: "if" } }));
           }}
-          title="Aide sur ce bloc"
+          title={t("node.help_tooltip", "Aide sur ce bloc")}
           style={{
             width:16, height:16, borderRadius:4, background:"transparent",
             border:"0.5px solid #333", cursor:"pointer", display:"flex",
@@ -58,20 +58,20 @@ export const IfNode = memo(function IfNode({ data, selected }: NodeProps) {
 
       {/* Condition preview */}
       <div style={{ padding:"7px 10px 36px", fontSize:10, lineHeight:1.5, wordBreak:"break-all", minHeight:20 }}>
-        <span style={{ fontSize:9, color:"#444", display:"block", marginBottom:2, textTransform:"uppercase", letterSpacing:"0.06em" }}>condition</span>
+        <span style={{ fontSize:9, color:"#444", display:"block", marginBottom:2, textTransform:"uppercase", letterSpacing:"0.06em" }}>{t("node.if.condition", "condition")}</span>
         {d.condition
           ? renderCond(d.condition)
-          : <span style={{ color:"#333", fontStyle:"italic" }}>vide</span>
+          : <span style={{ color:"#333", fontStyle:"italic" }}>{t("node.if.empty", "vide")}</span>
         }
       </div>
 
       {/* Labels */}
       <div style={{ position:"absolute", bottom:12, left:0, width:"100%", display:"flex", pointerEvents:"none" }}>
         <div style={{ flex:1, display:"flex", justifyContent:"center" }}>
-          <span style={{ fontSize:8, color:"#1D9E75" }}>✓ vrai</span>
+          <span style={{ fontSize:8, color:"#1D9E75" }}>{t("node.if.true", "✓ vrai")}</span>
         </div>
         <div style={{ flex:1, display:"flex", justifyContent:"center" }}>
-          <span style={{ fontSize:8, color:"#E24B4A" }}>✗ faux</span>
+          <span style={{ fontSize:8, color:"#E24B4A" }}>{t("node.if.false", "✗ faux")}</span>
         </div>
       </div>
 

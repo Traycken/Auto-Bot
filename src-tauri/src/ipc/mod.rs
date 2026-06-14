@@ -306,6 +306,11 @@ pub async fn select_screen_region(handle:tauri::AppHandle, screen:Option<i32>) -
 }
 
 #[tauri::command]
+pub fn get_screen_index_for_position(x: i32, y: i32) -> i32 {
+    crate::overlay::screen_for_region(x, y, 1, 1)
+}
+
+#[tauri::command]
 pub async fn request_cmd_admin_access(handle: tauri::AppHandle) -> Result<(), String> {
     crate::engine::restart_app_as_admin(&handle)
 }
@@ -333,6 +338,8 @@ pub struct AppSettings {
     pub python_envs: Vec<PythonEnvSetting>,
     #[serde(default)]
     pub edge_thickness: Option<u32>,
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 fn get_settings_file_path() -> Result<std::path::PathBuf, String> {
@@ -351,6 +358,7 @@ pub async fn get_settings() -> Result<AppSettings, String> {
             shortcuts: vec![],
             python_envs: vec![],
             edge_thickness: Some(4),
+            language: Some("fr".to_string()),
         });
     }
     let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
@@ -401,19 +409,24 @@ fn auto_detect_tesseract() -> Option<String> {
     None
 }
 
+fn get_project_root() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    Some(dir.to_path_buf())
+}
+
 #[tauri::command]
 pub async fn load_translations(lang: String) -> Result<std::collections::HashMap<String, String>, String> {
-    let mut dir = std::env::current_dir().unwrap_or_default().join("Localization");
-    if !dir.exists() {
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                let check = parent.join("Localization");
-                if check.exists() {
-                    dir = check;
-                }
-            }
+    // The Localization folder is located in the same directory as the executable (auto-bot.exe)
+    let dir = if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            parent.join("Localization")
+        } else {
+            std::env::current_dir().unwrap_or_default().join("Localization")
         }
-    }
+    } else {
+        std::env::current_dir().unwrap_or_default().join("Localization")
+    };
     
     // Create Localization directory if it doesn't exist to make sure we don't crash
     let _ = std::fs::create_dir_all(&dir);
@@ -546,7 +559,767 @@ fn get_tesseract_path() -> Option<String> {
     None
 }
 
-#[command]
+#[tauri::command]
 pub async fn set_webview_zoom(webview: tauri::Webview, factor: f64) -> Result<(), String> {
     webview.set_zoom(factor).map_err(|e| e.to_string())
+}
+
+// ── YOLO/IA helpers & new commands ───────────────────────────────────────────
+
+pub(crate) fn get_yolo_models_dir() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    Some(dir.join("YOLO").join("Models"))
+}
+
+pub(crate) async fn download_yolo_model_if_needed(handle: &tauri::AppHandle, model_name: &str) -> Result<std::path::PathBuf, String> {
+    use tauri::Emitter;
+
+    let models_dir = get_yolo_models_dir().ok_or("Dossier des modèles non trouvé")?;
+    if !models_dir.exists() {
+        let _ = std::fs::create_dir_all(&models_dir);
+    }
+
+    // 1. Check if it exists directly in the models directory root (backward compatibility / custom imports)
+    let direct_path = models_dir.join(model_name);
+    if direct_path.exists() {
+        return Ok(direct_path);
+    }
+
+    // Define key paths
+    let folder_name = model_name.replace(".onnx", "");
+    let model_folder = models_dir.join(&folder_name);
+    let model_path = model_folder.join(model_name);
+    let version_path = model_folder.join("version.json");
+
+    // Static runtime check list to only check updates once per overall sequence run
+    use std::sync::Mutex;
+    static CHECKED_IN_THIS_RUN: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
+
+    // If a sequence is running, we can check or reset this state
+    let is_running = crate::engine::ExecutionEngine::is_running(&handle);
+    let mut already_checked_this_run = false;
+
+    if is_running {
+        let mut checked = CHECKED_IN_THIS_RUN.lock().unwrap();
+        if checked.is_none() {
+            *checked = Some(std::collections::HashSet::new());
+        }
+        if let Some(ref mut set) = *checked {
+            if set.contains(model_name) {
+                already_checked_this_run = true;
+            } else {
+                set.insert(model_name.to_string());
+            }
+        }
+    } else {
+        // Reset when not running to allow manual verification/testing to check
+        let mut checked = CHECKED_IN_THIS_RUN.lock().unwrap();
+        *checked = None;
+    }
+
+    // Helper structure for version.json
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
+    struct ModelVersion {
+        version: String,
+        last_checked: Option<i64>,
+    }
+
+    // Determine target version by loading or checking with GitHub release API
+    let mut target_version = "v8.3.0".to_string(); // fallback
+    let mut must_query_github = !already_checked_this_run;
+
+    // Load current version file
+    let mut current_version_data: Option<ModelVersion> = None;
+    if version_path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&version_path) {
+            if let Ok(ver) = serde_json::from_str::<ModelVersion>(&data) {
+                current_version_data = Some(ver.clone());
+                target_version = ver.version.clone();
+                // Check if last check was less than 1 hour ago
+                if let Some(last_check) = ver.last_checked {
+                    let now = chrono::Utc::now().timestamp();
+                    if now - last_check < 3600 {
+                        must_query_github = false;
+                    }
+                }
+            }
+        }
+    }
+
+    let client = reqwest::Client::new();
+
+    // Query GitHub release if needed
+    if must_query_github {
+        let _ = handle.emit("yolo://progress", serde_json::json!({
+            "status": "checking",
+            "progress": 0
+        }));
+
+        #[derive(serde::Deserialize)]
+        struct GithubRelease {
+            tag_name: String,
+        }
+
+        if let Ok(res) = client.get("https://api.github.com/repos/ultralytics/assets/releases/latest")
+            .header("User-Agent", "auto-bot")
+            .send()
+            .await
+        {
+            if let Ok(release) = res.json::<GithubRelease>().await {
+                target_version = release.tag_name;
+            }
+        }
+
+        // Update version file with last check timestamp
+        let version_json = ModelVersion {
+            version: target_version.clone(),
+            last_checked: Some(chrono::Utc::now().timestamp()),
+        };
+        let _ = std::fs::create_dir_all(&model_folder);
+        if let Ok(version_data) = serde_json::to_string_pretty(&version_json) {
+            let _ = std::fs::write(&version_path, version_data);
+        }
+    }
+
+    let dl_name = if model_name.starts_with("yolo11") || model_name.starts_with("yolov11") {
+        model_name.replace("yolov11", "yolo11").replace(".onnx", ".pt")
+    } else if model_name.starts_with("yolo12") || model_name.starts_with("yolov12") {
+        model_name.replace("yolov12", "yolo12").replace(".onnx", ".pt")
+    } else {
+        model_name.replace(".onnx", ".pt")
+    };
+
+    // Determine if we need to download
+    let mut need_download = true;
+    if model_path.exists() && current_version_data.is_some() {
+        if let Some(ref ver) = current_version_data {
+            if ver.version == target_version {
+                need_download = false;
+            }
+        }
+    }
+
+    if !need_download {
+        return Ok(model_path);
+    }
+
+    // Prepare model folder
+    let _ = std::fs::create_dir_all(&model_folder);
+
+    // Download the .pt file
+    let pt_path = model_folder.join(&dl_name);
+
+    if !pt_path.exists() {
+        let url = format!(
+            "https://github.com/ultralytics/assets/releases/latest/download/{}",
+            dl_name
+        );
+
+        let _ = handle.emit("yolo://progress", serde_json::json!({
+            "status": "downloading",
+            "progress": 0
+        }));
+
+        let res = client.get(&url).send().await.map_err(|e| format!("Erreur de téléchargement du fichier .pt: {e}"))?;
+        if !res.status().is_success() {
+            let err_msg = format!("Impossible de télécharger le fichier .pt ({}): {}", res.status(), url);
+            let _ = handle.emit("yolo://progress", serde_json::json!({
+                "status": "error",
+                "progress": 0,
+                "error": err_msg
+            }));
+            return Err(err_msg);
+        }
+
+        let total_size = res.content_length().unwrap_or(0);
+        let mut file = std::fs::File::create(&pt_path).map_err(|e| format!("Erreur de création du fichier .pt: {e}"))?;
+        let mut downloaded: u64 = 0;
+
+        use std::io::Write;
+        let mut stream = res.bytes_stream();
+        use tokio_stream::StreamExt;
+        while let Some(chunk_res) = stream.next().await {
+            let chunk = chunk_res.map_err(|e| format!("Erreur de lecture du flux de téléchargement: {e}"))?;
+            file.write_all(&chunk).map_err(|e| format!("Erreur d'écriture du flux dans le fichier: {e}"))?;
+            downloaded += chunk.len() as u64;
+            if total_size > 0 {
+                let progress = ((downloaded as f64 / total_size as f64) * 100.0) as u32;
+                let _ = handle.emit("yolo://progress", serde_json::json!({
+                    "status": "downloading",
+                    "progress": progress
+                }));
+            }
+        }
+    }
+
+    // Resolve the yolo base directory (exe_dir/YOLO)
+    let root = get_project_root().ok_or("Impossible de trouver la racine de l'exécutable")?;
+    let yolo_dir = root.join("YOLO");
+    let venv_dir = yolo_dir.join(".venv");
+
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let handle_clone = handle.clone();
+    
+    // Spawn progress timer task for conversion
+    let progress_timer_handle = tokio::spawn(async move {
+        let mut progress_val = 0;
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(500));
+        loop {
+            tokio::select! {
+                _ = progress_rx.recv() => {
+                    break;
+                }
+                _ = interval.tick() => {
+                    if progress_val < 99 {
+                        progress_val += 3;
+                        if progress_val > 99 { progress_val = 99; }
+                        let _ = handle_clone.emit("yolo://progress", serde_json::json!({
+                            "status": "converting",
+                            "progress": progress_val
+                        }));
+                    }
+                }
+            }
+        }
+    });
+
+    let _ = handle.emit("yolo://progress", serde_json::json!({
+        "status": "converting",
+        "progress": 0
+    }));
+
+    // Initialize venv inside yolo_dir if it doesn't exist
+    if !venv_dir.exists() {
+        let _ = std::fs::create_dir_all(&yolo_dir);
+        let mut cmd = tokio::process::Command::new("uv");
+        cmd.args(["venv"]);
+        cmd.current_dir(&yolo_dir);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.as_std_mut().creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        let _ = cmd.output().await;
+    }
+
+    // Run uv export yolo command
+    let pt_path_str = pt_path.to_string_lossy().to_string();
+    let mut cmd = tokio::process::Command::new("uv");
+    cmd.args([
+        "run",
+        "--with", "ultralytics",
+        "yolo", "export",
+        &format!("model={}", pt_path_str),
+        "format=onnx",
+        "opset=13",
+        "simplify=True"
+    ]);
+    cmd.current_dir(&yolo_dir);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.as_std_mut().creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd.output().await;
+    
+    // Stop the progress timer
+    let _ = progress_tx.send(()).await;
+    let _ = progress_timer_handle.await;
+
+    let output = output.map_err(|e| format!("Impossible d'exécuter la conversion: {e}"))?;
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
+        let _ = handle.emit("yolo://progress", serde_json::json!({
+            "status": "error",
+            "progress": 0,
+            "error": format!("La conversion du modèle en ONNX a échoué: {}", err_msg)
+        }));
+        return Err(format!("La conversion du modèle en ONNX a échoué: {err_msg}"));
+    }
+
+    // Clean up .pt file
+    let _ = std::fs::remove_file(&pt_path);
+
+    // If the exported file was named after the download name (e.g. yolo11n.onnx) but the user expects
+    // the model name (e.g. yolov11n.onnx), rename it.
+    let exported_onnx_name = dl_name.replace(".pt", ".onnx");
+    let exported_onnx_path = model_folder.join(&exported_onnx_name);
+    if exported_onnx_path.exists() && exported_onnx_path != model_path {
+        let _ = std::fs::rename(&exported_onnx_path, &model_path);
+    }
+
+    if !model_path.exists() {
+        let err_msg = "Le fichier .onnx n'a pas été généré par l'exportation.".to_string();
+        let _ = handle.emit("yolo://progress", serde_json::json!({
+            "status": "error",
+            "progress": 0,
+            "error": err_msg
+        }));
+        return Err(err_msg);
+    }
+
+    // Write version.json
+    let version_json = serde_json::json!({
+        "version": target_version
+    });
+    let version_data = serde_json::to_string_pretty(&version_json).unwrap_or_default();
+    let _ = std::fs::write(&version_path, version_data);
+
+    let _ = handle.emit("yolo://progress", serde_json::json!({
+        "status": "done",
+        "progress": 100
+    }));
+
+    Ok(model_path)
+}
+
+#[tauri::command]
+pub async fn list_yolo_models() -> Result<Vec<String>, String> {
+    let models_dir = get_yolo_models_dir().ok_or_else(|| "Dossier des modèles non trouvé".to_string())?;
+    if !models_dir.exists() {
+        let _ = std::fs::create_dir_all(&models_dir);
+    }
+    let mut models = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "onnx") {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    models.push(name.to_string());
+                }
+            } else if path.is_dir() {
+                // Scan subdirectories (Models/{Folder}/{Model}.onnx)
+                if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                    for sub_entry in sub_entries.flatten() {
+                        let sub_path = sub_entry.path();
+                        if sub_path.is_file() && sub_path.extension().map_or(false, |ext| ext == "onnx") {
+                            if let Some(name) = sub_path.file_name().and_then(|n| n.to_str()) {
+                                models.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(models)
+}
+
+#[tauri::command]
+pub async fn recreate_yolo_venv() -> Result<(), String> {
+    let root = get_project_root().ok_or("Impossible de trouver le dossier de l'exécutable")?;
+    let yolo_dir = root.join("YOLO");
+    let venv_dir = yolo_dir.join(".venv");
+    
+    // Delete .venv if it exists
+    if venv_dir.exists() {
+        if venv_dir.is_file() {
+            let _ = std::fs::remove_file(&venv_dir);
+        } else {
+            std::fs::remove_dir_all(&venv_dir).map_err(|e| format!("Impossible de supprimer l'ancien .venv: {e}"))?;
+        }
+    }
+    
+    // Create YOLO directory if it doesn't exist
+    if !yolo_dir.exists() {
+        let _ = std::fs::create_dir_all(&yolo_dir);
+    }
+    
+    let run_hidden_command = |mut cmd: std::process::Command| -> Result<std::process::Output, String> {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        cmd.output().map_err(|e| format!("Impossible d'exécuter le processus: {e}"))
+    };
+
+    // Run uv venv
+    let mut cmd = std::process::Command::new("uv");
+    cmd.args(["venv"]);
+    cmd.current_dir(&yolo_dir);
+    let output = run_hidden_command(cmd)?;
+    if !output.status.success() {
+        return Err(format!("uv venv a échoué: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    
+    // Run uv pip install ultralytics
+    let mut cmd_install = std::process::Command::new("uv");
+    cmd_install.args(["pip", "install", "ultralytics"]);
+    cmd_install.current_dir(&yolo_dir);
+    let output_install = run_hidden_command(cmd_install)?;
+    if !output_install.status.success() {
+        return Err(format!("uv pip install ultralytics a échoué: {}", String::from_utf8_lossy(&output_install.stderr)));
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn import_yolo_model(file_path: String) -> Result<String, String> {
+    let src = std::path::Path::new(&file_path);
+    if !src.exists() {
+        return Err("Le fichier sélectionné n'existe pas.".to_string());
+    }
+    let name = src.file_name().ok_or("Nom de fichier invalide")?;
+    let models_dir = get_yolo_models_dir().ok_or("Dossier des modèles non trouvé")?;
+    if !models_dir.exists() {
+        let _ = std::fs::create_dir_all(&models_dir);
+    }
+    let dest = models_dir.join(name);
+    std::fs::copy(src, &dest).map_err(|e| format!("Erreur de copie: {e}"))?;
+    Ok(name.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn test_ia(
+    mode: String,
+    prompt: String,
+    api_mode: String,
+    api_key: String,
+    model_name: String,
+    api_url: String,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    screen: i32,
+) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let base_url = if api_url.is_empty() {
+        if api_mode == "local" {
+            "http://localhost:11434/v1".to_string()
+        } else {
+            "https://api.openai.com/v1".to_string()
+        }
+    } else {
+        api_url.trim_end_matches('/').to_string()
+    };
+
+    let url = if base_url.ends_with("/chat/completions") {
+        base_url
+    } else if base_url.ends_with("/v1") {
+        format!("{}/chat/completions", base_url)
+    } else {
+        format!("{}/v1/chat/completions", base_url)
+    };
+
+    let b64_img = if mode == "image" {
+        match crate::engine::capture_image_for_ocr(x, y, w, h, screen) {
+            Ok(cropped) => {
+                let mut buf = Vec::new();
+                if cropped.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_ok() {
+                    use base64::Engine as _;
+                    Some(base64::engine::general_purpose::STANDARD.encode(&buf))
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                return Err(format!("Erreur de capture d'image: {}", e));
+            }
+        }
+    } else {
+        None
+    };
+
+    let messages = if let Some(b64) = b64_img {
+        serde_json::json!([
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": format!("data:image/png;base64,{}", b64)
+                        }
+                    }
+                ]
+            }
+        ])
+    } else {
+        serde_json::json!([
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ])
+    };
+
+    let payload = serde_json::json!({
+        "model": model_name,
+        "messages": messages
+    });
+
+    let mut req = client.post(&url);
+    if !api_key.is_empty() {
+        req = req.bearer_auth(&api_key);
+    }
+
+    let res = req.json(&payload).send().await.map_err(|e| format!("Erreur HTTP: {e}"))?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        return Err(format!("Erreur API ({status}): {body}"));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ChatChoice {
+        message: ChatMessage,
+    }
+    #[derive(serde::Deserialize)]
+    struct ChatMessage {
+        content: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct ChatResponse {
+        choices: Option<Vec<ChatChoice>>,
+    }
+
+    let chat_resp = res.json::<ChatResponse>().await.map_err(|e| format!("Erreur JSON: {e}"))?;
+    let content = chat_resp.choices
+        .and_then(|c| c.into_iter().next())
+        .and_then(|choice| choice.message.content)
+        .ok_or_else(|| "Réponse vide de l'API".to_string())?;
+
+    Ok(content)
+}
+
+#[tauri::command]
+pub async fn discover_ia_models(api_mode: String, api_key: String, api_url: String) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::new();
+    let base_url = if api_url.is_empty() {
+        if api_mode == "local" {
+            "http://localhost:11434/v1".to_string()
+        } else {
+            "https://api.openai.com/v1".to_string()
+        }
+    } else {
+        api_url.trim_end_matches('/').to_string()
+    };
+
+    // Try OpenAI / v1 standard models endpoint first
+    let url_v1 = if base_url.ends_with("/v1") {
+        format!("{}/models", base_url)
+    } else {
+        format!("{}/v1/models", base_url)
+    };
+
+    let mut req = client.get(&url_v1);
+    if !api_key.is_empty() {
+        req = req.bearer_auth(&api_key);
+    }
+
+    if let Ok(res) = req.send().await {
+        if res.status().is_success() {
+            #[derive(serde::Deserialize)]
+            struct ModelItem { id: String }
+            #[derive(serde::Deserialize)]
+            struct ModelsResponse { data: Vec<ModelItem> }
+            if let Ok(resp) = res.json::<ModelsResponse>().await {
+                let names: Vec<String> = resp.data.into_iter().map(|m| m.id).collect();
+                if !names.is_empty() {
+                    return Ok(names);
+                }
+            }
+        }
+    }
+
+    // Fallback for Ollama custom api/tags endpoint
+    let host = base_url.split("/v1").next().unwrap_or(&base_url);
+    let ollama_url = format!("{}/api/tags", host);
+
+    let mut req_ol = client.get(&ollama_url);
+    if !api_key.is_empty() {
+        req_ol = req_ol.bearer_auth(&api_key);
+    }
+    if let Ok(res) = req_ol.send().await {
+        if res.status().is_success() {
+            #[derive(serde::Deserialize)]
+            struct OlModel { name: String }
+            #[derive(serde::Deserialize)]
+            struct OlResponse { models: Vec<OlModel> }
+            if let Ok(resp) = res.json::<OlResponse>().await {
+                let names = resp.models.into_iter().map(|m| m.name).collect();
+                return Ok(names);
+            }
+        }
+    }
+
+    Err("Impossible de récupérer les modèles via les points de terminaison standard (/v1/models ou /api/tags)".to_string())
+}
+
+#[tauri::command]
+pub async fn test_yolo(
+    handle: tauri::AppHandle,
+    model_name: String,
+    mode: String,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    screen: i32,
+    threshold: String,
+) -> Result<String, String> {
+    let thresh = threshold.parse::<f32>().unwrap_or(0.5);
+    
+    let model_path = download_yolo_model_if_needed(&handle, &model_name).await?;
+    
+    let cropped = crate::engine::capture_image_for_ocr(x, y, w, h, screen)
+        .map_err(|e| format!("Erreur de capture d'image: {e}"))?;
+    
+    let dyn_img = image::DynamicImage::ImageRgba8(cropped);
+
+    let config = ultralytics_inference::InferenceConfig::default()
+        .with_confidence(thresh);
+    let mut model = ultralytics_inference::YOLOModel::load_with_config(&model_path, config)
+        .map_err(|e| format!("Erreur lors du chargement du modèle: {e}"))?;
+    
+    let results = model.predict_image(&dyn_img, "test_frame".to_string())
+        .map_err(|e| format!("Erreur de prédiction YOLO: {e}"))?;
+    
+    if let Some(result) = results.first() {
+        if mode == "classify" {
+            if let Some(ref probs) = result.probs {
+                let top_indices = probs.top_k(probs.data.len());
+                let mut class_names = Vec::new();
+                for cls_id in top_indices {
+                    let conf = *probs.data.get(cls_id).unwrap_or(&0.0);
+                    if conf >= thresh {
+                        if let Some(name) = result.names.get(&cls_id) {
+                            class_names.push(name.clone());
+                        }
+                    }
+                }
+                let output = serde_json::Value::Array(
+                    class_names.into_iter().map(serde_json::Value::String).collect()
+                );
+                return Ok(serde_json::to_string_pretty(&output).unwrap_or_default());
+            } else {
+                return Err("Le modèle ne produit pas de classification (pas de probs).".to_string());
+            }
+        } else {
+            // mode == "detect"
+            if let Some(ref boxes) = result.boxes {
+                let xyxy_matrix = boxes.xyxy();
+                let mut detection_dict: std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>> = std::collections::HashMap::new();
+
+                for i in 0..boxes.len() {
+                    let conf = boxes.conf()[i];
+                    if conf < thresh {
+                        continue;
+                    }
+                    let cls = boxes.cls()[i] as usize;
+                    let name = result.names.get(&cls).map(|s| s.as_str()).unwrap_or("unknown").to_string();
+                    
+                    let b_coords = xyxy_matrix.row(i);
+                    let x = b_coords[0].round() as i32;
+                    let y = b_coords[1].round() as i32;
+                    let w = (b_coords[2] - b_coords[0]).round() as i32;
+                    let h = (b_coords[3] - b_coords[1]).round() as i32;
+                    let conf_pct = (conf * 100.0).round() as i32;
+
+                    let box_val = serde_json::json!({
+                        "bbox": [x, y, w, h],
+                        "conf": conf_pct
+                    });
+
+                    let class_entry = detection_dict.entry(name).or_default();
+                    let index_str = class_entry.len().to_string();
+                    class_entry.insert(index_str, box_val);
+                }
+                let dict_val = serde_json::to_value(&detection_dict).unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                return Ok(serde_json::to_string_pretty(&dict_val).unwrap_or_default());
+            } else {
+                return Err("Le modèle ne produit pas de détection (pas de boxes).".to_string());
+            }
+        }
+    }
+    
+    Ok("{}".to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UvPythonVersion {
+    pub value: String,
+    pub label: String,
+    pub installed: bool,
+}
+
+#[command]
+pub async fn get_uv_python_versions() -> Result<Vec<UvPythonVersion>, String> {
+    let uv_exe = if let Ok(home) = std::env::var("USERPROFILE") {
+        let p = std::path::Path::new(&home).join(".local").join("bin").join("uv.exe");
+        if p.exists() { p.to_string_lossy().to_string() } else { "uv".to_string() }
+    } else if let Ok(home) = std::env::var("HOME") {
+        let p = std::path::Path::new(&home).join(".local").join("bin").join("uv");
+        if p.exists() { p.to_string_lossy().to_string() } else { "uv".to_string() }
+    } else {
+        "uv".to_string()
+    };
+
+    let mut cmd = std::process::Command::new(uv_exe);
+    cmd.args(["python", "list", "--all-versions"]);
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    let mut versions = Vec::new();
+    let re = regex::Regex::new(r"cpython-3\.[0-9]*\.[0-9]*[a-zA-Z]").unwrap();
+
+    for line in stdout.lines() {
+        let line_lower = line.to_lowercase();
+        if !line_lower.contains("cpython") { continue; }
+        if !line_lower.contains("windows-x86_64") { continue; }
+        if line_lower.contains("freethreaded") { continue; }
+        if re.is_match(line) { continue; }
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.is_empty() { continue; }
+        let full_name = parts[0].to_string();
+        
+        let label = if full_name.starts_with("cpython-") {
+            full_name.split('-').nth(1).unwrap_or(&full_name).to_string()
+        } else {
+            full_name.clone()
+        };
+
+        let installed = if parts.len() > 1 {
+            let rest = parts[1..].join(" ");
+            !rest.contains("<download")
+        } else {
+            false
+        };
+
+        versions.push(UvPythonVersion {
+            value: label.clone(),
+            label: format!("Python {}", label),
+            installed,
+        });
+    }
+
+    let mut deduped: Vec<UvPythonVersion> = Vec::new();
+    for v in versions {
+        if let Some(existing) = deduped.iter_mut().find(|x| x.value == v.value) {
+            if v.installed {
+                existing.installed = true;
+            }
+        } else {
+            deduped.push(v);
+        }
+    }
+
+    Ok(deduped)
 }
