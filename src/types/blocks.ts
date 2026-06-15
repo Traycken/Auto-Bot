@@ -1,6 +1,9 @@
 export type MouseButton   = "left" | "right" | "middle";
 export type ColorFormat   = "hex" | "rgb" | "hsv";
 export type RandomMode    = "int" | "float" | "bool" | "str" | "list";
+export type GamepadAction = "button" | "stick" | "trigger";
+export type GamepadStick  = "LX" | "LY" | "RX" | "RY";
+export type GamepadTriggerSide = "LT" | "RT";
 
 // ── Mouse ─────────────────────────────────────────────────────────────────────
 
@@ -22,6 +25,18 @@ export interface MouseScrollBlock {
 
 export interface KeyPressBlock  { kind: "key_press";  key_combo: string; hold_ms: string; }
 export interface TypeTextBlock  { kind: "type_text";  text: string; delay_between_chars_ms: string; }
+
+// ── Gamepad (Manette) ─────────────────────────────────────────────────────────
+
+export interface GamepadBlock {
+  kind: "gamepad";
+  action: GamepadAction;
+  buttons: string;            // ex. "A", "A+B", "UP" (mode button)
+  stick: GamepadStick;        // ex. "LX" (mode stick)
+  trigger: GamepadTriggerSide; // ex. "LT" (mode trigger)
+  value: string;              // [-32768..32767] stick / [0..255] trigger
+  hold_ms: string;            // durée de maintien en ms (mode button)
+}
 
 // ── Flow ──────────────────────────────────────────────────────────────────────
 
@@ -244,7 +259,7 @@ export type Block =
   | DictAddBlock | DictCombineBlock | DictFindBlock | DictRemoveBlock
   | CmdBlock | PythonBlock
   | IterationsBlock | ForEachBlock | SwitchBlock | ConsoleBlock
-  | IaBlock | VpoBlock;
+  | IaBlock | VpoBlock | GamepadBlock;
 
 export type BlockKind = Block["kind"];
 
@@ -253,7 +268,7 @@ export type BlockKind = Block["kind"];
 export interface BlockMeta {
   kind: BlockKind;
   label: string;
-  category: "special" | "mouse" | "keyboard" | "flow" | "vision" | "logic" | "function" | "array" | "dict" | "system" | "collection";
+  category: "special" | "mouse" | "keyboard" | "flow" | "vision" | "logic" | "function" | "array" | "dict" | "system" | "collection" | "gamepad";
   color: string;
   icon: string;
   defaultData: Omit<Block, "kind">;
@@ -281,6 +296,10 @@ export const BLOCK_CATALOG: BlockMeta[] = [
     defaultData: { key_combo:"", hold_ms:"0" } },
   { kind: "type_text",    label: "Texte",   category: "keyboard", color: "#378ADD", icon: "ti-cursor-text",
     defaultData: { text:"", delay_between_chars_ms:"0" } },
+
+  // ── Gamepad (Manette) ─────────────────────────────────────────────────────
+  { kind: "gamepad", label: "Manette", category: "gamepad", color: "#7C3AED", icon: "ti-device-gamepad-2",
+    defaultData: { action:"button" as GamepadAction, buttons:"A", stick:"LX" as GamepadStick, trigger:"LT" as GamepadTriggerSide, value:"0", hold_ms:"100" } },
 
   // ── Flow ──────────────────────────────────────────────────────────────────
   { kind: "wait",         label: "Attendre",          category: "flow", color: "#7F77DD", icon: "ti-clock-pause",

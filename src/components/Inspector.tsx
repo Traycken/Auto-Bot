@@ -1979,6 +1979,106 @@ export function Inspector() {
               </>
             )}
 
+            {/* ── Manette (Gamepad) ── */}
+            {kind==="gamepad" && (() => {
+              const action = (data.action as string) ?? "button";
+              return (
+                <>
+                  {/* Sélecteur d'action */}
+                  <div style={S.row}>
+                    <span style={S.label}>{t("inspector.gamepad.action", "Action")}</span>
+                    <div style={{ display:"flex", gap:4 }}>
+                      {(["button","stick","trigger"] as const).map(a => (
+                        <button key={a} onClick={() => patch({ action:a })} style={{
+                          ...S.btn, flex:1,
+                          background: action===a ? "#7C3AED22" : "#111113",
+                          borderColor: action===a ? "#7C3AED" : "#2a2a2e",
+                          color: action===a ? "#A78BFA" : "#666",
+                        }}>
+                          {a==="button" ? "🎮 Bouton" : a==="stick" ? "🕹 Stick" : "🎯 Trigger"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ── Mode Bouton ── */}
+                  {action==="button" && (
+                    <>
+                      <div style={S.row}>
+                        <span style={S.label}>{t("inspector.gamepad.buttons", "Bouton(s) (séparer par +)")}</span>
+                        <input
+                          type="text"
+                          value={(data.buttons as string)??"A"}
+                          onChange={e => patch({ buttons: e.target.value })}
+                          placeholder="A, B+X, UP, LB…"
+                          style={S.input}
+                        />
+                      </div>
+                      <SmartInput label={t("inspector.gamepad.hold_ms", "Maintien (ms)")} value={(data.hold_ms as string)??"100"} onChange={v => patch({ hold_ms:v })} />
+                      <div style={{ padding:"6px 8px", background:"#111113", borderRadius:5, border:"0.5px solid #2a2a2e", fontSize:9, color:"#555", lineHeight:1.6 }}>
+                        <span style={{ color:"#A78BFA", fontWeight:600 }}>Boutons disponibles :</span><br/>
+                        A · B · X · Y · UP · DOWN · LEFT · RIGHT<br/>
+                        LB · RB · START · BACK · LS · RS · GUIDE
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── Mode Stick ── */}
+                  {action==="stick" && (
+                    <>
+                      <div style={S.row}>
+                        <span style={S.label}>{t("inspector.gamepad.stick", "Axe du stick")}</span>
+                        <div style={{ display:"flex", gap:4 }}>
+                          {(["LX","LY","RX","RY"] as const).map(s => (
+                            <button key={s} onClick={() => patch({ stick:s })} style={{
+                              ...S.btn, flex:1,
+                              background: (data.stick as string)===s ? "#7C3AED22" : "#111113",
+                              borderColor: (data.stick as string)===s ? "#7C3AED" : "#2a2a2e",
+                              color: (data.stick as string)===s ? "#A78BFA" : "#666",
+                            }}>{s}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <SmartInput label={t("inspector.gamepad.stick_value", "Valeur [-32768 … 32767]")} value={(data.value as string)??"0"} onChange={v => patch({ value:v })} placeholder="-32768 à 32767" />
+                      <div style={{ padding:"6px 8px", background:"#111113", borderRadius:5, border:"0.5px solid #2a2a2e", fontSize:9, color:"#555" }}>
+                        <span style={{ color:"#A78BFA" }}>LX/LY</span> = stick gauche · <span style={{ color:"#A78BFA" }}>RX/RY</span> = stick droit<br/>
+                        0 = centre · -32768 = gauche/bas · 32767 = droite/haut
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── Mode Trigger ── */}
+                  {action==="trigger" && (
+                    <>
+                      <div style={S.row}>
+                        <span style={S.label}>{t("inspector.gamepad.trigger", "Gâchette")}</span>
+                        <div style={{ display:"flex", gap:4 }}>
+                          {(["LT","RT"] as const).map(tr => (
+                            <button key={tr} onClick={() => patch({ trigger:tr })} style={{
+                              ...S.btn, flex:1,
+                              background: (data.trigger as string)===tr ? "#7C3AED22" : "#111113",
+                              borderColor: (data.trigger as string)===tr ? "#7C3AED" : "#2a2a2e",
+                              color: (data.trigger as string)===tr ? "#A78BFA" : "#666",
+                            }}>{tr==="LT" ? "LT (gauche)" : "RT (droite)"}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <SmartInput label={t("inspector.gamepad.trigger_value", "Valeur [0 … 255]")} value={(data.value as string)??"0"} onChange={v => patch({ value:v })} placeholder="0 à 255" />
+                      <div style={{ padding:"6px 8px", background:"#111113", borderRadius:5, border:"0.5px solid #2a2a2e", fontSize:9, color:"#555" }}>
+                        0 = relâché · 255 = appuyé à fond
+                      </div>
+                    </>
+                  )}
+
+                  {/* Note ViGEmBus */}
+                  <div style={{ padding:"6px 8px", marginTop:4, background:"#7C3AED11", borderRadius:5, border:"0.5px solid #7C3AED44", fontSize:9, color:"#A78BFA" }}>
+                    <i className="ti ti-info-circle" style={{ marginRight:4 }} />
+                    Nécessite le driver <strong>ViGEmBus</strong> installé sur le PC.
+                  </div>
+                </>
+              );
+            })()}
+
             {/* ── Math ── */}
             {kind==="math" && (
               <>

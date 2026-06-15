@@ -370,6 +370,7 @@ function AppInner() {
   const LOCALIZED_CAT_LABELS: Record<string, string> = {
     mouse: t("app.cat.mouse", "Souris"),
     keyboard: t("app.cat.keyboard", "Clavier"),
+    gamepad: t("app.cat.gamepad", "Manette"),
     flow: t("app.cat.flow", "Contrôle"),
     vision: t("app.cat.vision", "Vision"),
     logic: t("app.cat.logic", "Logique"),
