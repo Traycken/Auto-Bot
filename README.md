@@ -1,6 +1,9 @@
-<p align="center">
-  <img src="./AutoBot.svg" alt="AutoBot" width="100">
-</p>
+<div align="center">
+  <img src="./AutoBot.svg" alt="AutoBot" width="125">
+  <br>
+  <span style="margin-top: 24px;"><strong>AutoBot</strong></span>
+  <br><br>
+</div>
 
 [![Tauri Version](https://img.shields.io/badge/Tauri-v2.x-0F0F11?logo=tauri&logoColor=FFC131&labelColor=24292e)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-1.77%2B-000000?logo=rust&logoColor=white&labelColor=24292e)](https://www.rust-lang.org/)
