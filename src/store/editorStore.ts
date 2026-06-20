@@ -95,6 +95,7 @@ interface EditorStore {
   redo: () => void;
   saveActiveTab: () => Promise<void>;
   saveActiveTabAs: () => Promise<void>;
+  quickSaveActiveTab: () => Promise<void>;
   openSequence: () => Promise<void>;
   openFunction: () => Promise<void>;
   openSequenceWithPath: (path: string) => Promise<void>;
@@ -863,6 +864,52 @@ export const useEditorStore = create<EditorStore>((originalSet, get) => {
           get().pushLog({ level: "error", message: `Erreur sauvegarde: ${String(e)}` });
         }
       }
+    }
+  },
+
+  async quickSaveActiveTab() {
+    const { tabs, activeTabId } = get();
+    const tab = tabs.find(t => t.id === activeTabId);
+    if (!tab) return;
+    
+    // If it already has a path, just save it normally
+    if (tab.filePath) {
+      await get().saveActiveTab();
+      return;
+    }
+
+    try {
+      const exeDir = await invoke<string>("get_exe_dir");
+      let path = "";
+      if (tab.kind === "function") {
+        const tabName = (tab.name && tab.name !== "undefined") ? tab.name : "nouvelle_fonction";
+        path = `${exeDir}/Fonctions/${tabName}.abfnc`;
+        
+        const argsNode = tab.nodes.find(n => n.data.kind === "function_args");
+        const args = (argsNode?.data as { args?: unknown[] })?.args ?? [];
+        const payload = {
+          name: tabName, args,
+          nodes: tab.nodes.map(n => ({ id: n.id, position: n.position, data: n.data })),
+          edges: tab.edges.map(e => ({
+            id: e.id, source: e.source, target: e.target,
+            sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null,
+          })),
+        };
+        await invoke("write_text_file_native", { path, content: JSON.stringify(payload, null, 2) });
+      } else {
+        const tabName = (tab.name && tab.name !== "undefined") ? tab.name : "nouvelle_sequence";
+        path = `${exeDir}/Séquences/${tabName}.absqc`;
+        
+        const data = JSON.stringify({ nodes: tab.nodes, edges: tab.edges, variables: get().variables }, null, 2);
+        await invoke("write_text_file_native", { path, content: data });
+      }
+      
+      set(s => ({
+        tabs: s.tabs.map(t => t.id === activeTabId ? { ...t, dirty: false, filePath: path } : t),
+      }));
+      get().pushLog({ level: "ok", message: `Sauvegarde rapide : ${path}` });
+    } catch (e) {
+      get().pushLog({ level: "error", message: `Erreur sauvegarde rapide: ${String(e)}` });
     }
   },
 

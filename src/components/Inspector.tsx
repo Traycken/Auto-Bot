@@ -192,6 +192,26 @@ function ColorField({ data, onChange }: { data:Record<string,unknown>; onChange:
   const fmt = (data.color_format ?? "hex") as ColorFormat;
   const hexToRgb = (hex:string) => ({ r:parseInt(hex.slice(1,3),16)||0, g:parseInt(hex.slice(3,5),16)||0, b:parseInt(hex.slice(5,7),16)||0 });
   const t = useEditorStore(s => s.t);
+  
+  const currentHexes = (data.expected_hexes as string[]) || (data.expected_hex ? [data.expected_hex as string] : ["#FF0000"]);
+  
+  const addHex = () => onChange({ expected_hexes: [...currentHexes, "#FF0000"] });
+  const removeHex = (idx: number) => {
+    const newHexes = [...currentHexes];
+    newHexes.splice(idx, 1);
+    if (newHexes.length === 0) newHexes.push("#FF0000");
+    onChange({ expected_hexes: newHexes });
+  };
+  const updateHex = (idx: number, hex: string) => {
+    const newHexes = [...currentHexes];
+    newHexes[idx] = hex;
+    onChange({ expected_hexes: newHexes, expected_hex: newHexes[0] });
+    if (idx === 0) {
+      const {r,g,b} = hexToRgb(hex);
+      onChange({ expected_r: r, expected_g: g, expected_b: b });
+    }
+  };
+
   return (
     <div style={S.row}>
       <span style={S.label}>{t("inspector.color.format_label", "Format couleur")}</span>
@@ -206,12 +226,24 @@ function ColorField({ data, onChange }: { data:Record<string,unknown>; onChange:
         ))}
       </div>
       {fmt==="hex" && (
-        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-          <input type="color" value={(data.expected_hex as string)??"#FF0000"}
-            onChange={e => { const hex=e.target.value.toUpperCase(); const {r,g,b}=hexToRgb(hex); onChange({expected_hex:hex,expected_r:r,expected_g:g,expected_b:b}); }}
-            style={{ width:32, height:28, border:"none", borderRadius:4, background:"none", cursor:"pointer", padding:0 }} />
-          <input type="text" value={(data.expected_hex as string)??"#FF0000"}
-            onChange={e => onChange({ expected_hex:e.target.value.toUpperCase() })} style={S.input} placeholder="#FF0000" />
+        <div style={{ display:"flex", flexDirection: "column", gap: 6 }}>
+          {currentHexes.map((hex, idx) => (
+            <div key={idx} style={{ display:"flex", gap:6, alignItems:"center" }}>
+              <input type="color" value={hex}
+                onChange={e => updateHex(idx, e.target.value.toUpperCase())}
+                style={{ width:32, height:28, border:"none", borderRadius:4, background:"none", cursor:"pointer", padding:0 }} />
+              <input type="text" value={hex}
+                onChange={e => updateHex(idx, e.target.value.toUpperCase())} style={S.input} placeholder="#FF0000" />
+              {currentHexes.length > 1 && (
+                <button onClick={() => removeHex(idx)} style={{ ...S.btn, width: 28, height: 28, padding: 0, color: "#E84C1E" }}>
+                  <i className="ti ti-trash" />
+                </button>
+              )}
+            </div>
+          ))}
+          <button onClick={addHex} style={{ ...S.btn, alignSelf: "flex-start", fontSize: 11, padding: "4px 8px" }}>
+            <i className="ti ti-plus" style={{ marginRight: 4 }} /> {t("inspector.color.add", "Ajouter une couleur")}
+          </button>
         </div>
       )}
       {fmt==="rgb" && (
@@ -219,7 +251,16 @@ function ColorField({ data, onChange }: { data:Record<string,unknown>; onChange:
           {[["expected_r","R","#E24B4A"],["expected_g","G","#1D9E75"],["expected_b","B","#378ADD"]].map(([k,lbl,col]) => (
             <div key={k} style={{ flex:1 }}>
               <span style={{ ...S.label, color:col }}>{lbl} ({(data[k] as number)??0})</span>
-              <input type="range" min={0} max={255} step={1} value={(data[k] as number)??0} onChange={e => onChange({[k]:Number(e.target.value)})} style={{ width:"100%", accentColor:col }} />
+              <input type="range" min={0} max={255} step={1} value={(data[k] as number)??0} onChange={e => {
+                onChange({[k]:Number(e.target.value)});
+                const r = k === "expected_r" ? Number(e.target.value) : (data.expected_r as number ?? 0);
+                const g = k === "expected_g" ? Number(e.target.value) : (data.expected_g as number ?? 0);
+                const b = k === "expected_b" ? Number(e.target.value) : (data.expected_b as number ?? 0);
+                const hex = `#${(r<<16|g<<8|b).toString(16).padStart(6,"0").toUpperCase()}`;
+                const newHexes = [...currentHexes];
+                newHexes[0] = hex;
+                onChange({ expected_hexes: newHexes, expected_hex: hex });
+              }} style={{ width:"100%", accentColor:col }} />
             </div>
           ))}
         </div>
@@ -235,6 +276,147 @@ function ColorField({ data, onChange }: { data:Record<string,unknown>; onChange:
         </div>
       )}
     </div>
+  );
+}
+
+// ── PixelColorFields ────────────────────────────────────────────────────────
+function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId }: { data:Record<string,unknown>; onChange:(p:Record<string,unknown>)=>void; picking: boolean; pickPixelAndCoords: () => void; nodeId: string }) {
+  const t = useEditorStore(s => s.t);
+  const searchMode = (data.search_mode as string) ?? "pixel";
+  const outputMode = (data.output_mode as string) ?? "array";
+  
+  const pickRegion = async () => {
+    try {
+      const screenIdx = Number(data.screen ?? 0);
+      const r = await pickScreenRegion(screenIdx);
+      onChange({ x: String(r.x), y: String(r.y), region_w: String(r.w), region_h: String(r.h), screen: r.screen });
+    } catch {
+      await message(t("inspector.image.capture_unavailable", "Capture indisponible dans ce contexte."), { kind: "error" });
+    }
+  };
+
+  return (
+    <>
+      <div style={S.row}>
+        <span style={S.label}>{t("inspector.pixel.search_mode_label", "Mode de recherche")}</span>
+        <div style={{ display:"flex", gap:4 }}>
+          {([[ "pixel", "Pixel unique" ], [ "zone", "Zone" ]] as const).map(([mode,label]) => (
+            <button key={mode} onClick={() => onChange({ search_mode:mode })} style={{
+              ...S.btn, flex:1,
+              background: searchMode===mode ? "#1D9E7522" : "#111113",
+              borderColor: searchMode===mode ? "#1D9E75" : "#2a2a2e",
+              color: searchMode===mode ? "#1D9E75" : "#666",
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+      
+      {searchMode === "pixel" ? (
+        <button
+          onClick={pickPixelAndCoords}
+          disabled={picking}
+          style={{
+            ...S.btn,
+            width: "100%",
+            marginBottom: 10,
+            background: picking ? "#1D9E7522" : "#111113",
+            borderColor: "#1D9E75",
+            color: "#1D9E75",
+            fontWeight: "bold",
+          }}
+        >
+          <i className={`ti ${picking ? "ti-loader" : "ti-color-picker"}`} style={{ marginRight: 6 }} />
+          {picking ? t("inspector.pixel.picking_active", "Sélectionnez sur l'écran...") : t("inspector.pixel.picker_btn", "Pipette (Pos + Couleur)")}
+        </button>
+      ) : (
+        <div style={S.row}>
+          <span style={S.label}>{t("inspector.generic.capture_zone", "Zone de Capture")}</span>
+          <button onClick={pickRegion} style={{ ...S.btn, width: "100%", marginBottom: 10 }}>
+            <i className="ti ti-screenshot" style={{ fontSize:11 }} /> {t("inspector.generic.select_zone", "Sélectionner zone")}
+          </button>
+          <div style={{ display: "flex", gap: 5 }}>
+            <SmartInput label="X" value={String(data.x??"0")} onChange={v=>onChange({x:v})} />
+            <SmartInput label="Y" value={String(data.y??"0")} onChange={v=>onChange({y:v})} />
+            <SmartInput label="W" value={String(data.region_w??"100")} onChange={v=>onChange({region_w:v})} />
+            <SmartInput label="H" value={String(data.region_h??"100")} onChange={v=>onChange({region_h:v})} />
+          </div>
+        </div>
+      )}
+
+      <ColorField data={data} onChange={onChange} />
+      <div style={S.row}>
+        <span style={S.label}>{t("inspector.pixel.tolerance", "Tolérance")} ({(data.tolerance as number)??10})</span>
+        <input type="range" min={0} max={255} step={1} value={(data.tolerance as number)??10} onChange={e => onChange({ tolerance:Number(e.target.value) })} style={{ width:"100%", accentColor:"#1D9E75" }} />
+      </div>
+      <SmartInput
+        label={t("inspector.iterations_label", "Itérations")}
+        value={data.infinite ? "∞" : ((data.iterations as string) ?? "1")}
+        onChange={v => onChange({ iterations: v })}
+        disabled={!!data.infinite}
+      />
+      <BoolField label={t("inspector.infinite_mode", "Mode Infini (∞)")} value={!!data.infinite} onChange={v => {
+        if (v) {
+          onChange({ infinite: v, iterations: "∞" });
+        } else {
+          onChange({ infinite: v, iterations: "1" });
+        }
+      }} />
+      <SmartInput label={t("inspector.cooldown_ms", "Cool-down (ms)")} value={(data.cooldown_ms as string)??"250"} onChange={v => onChange({ cooldown_ms:v })} />
+      <div style={S.row}>
+        <span style={S.label}>{t("inspector.image.output_mode_label", "Format de sortie")}</span>
+        <div style={{ display:"flex", gap:4 }}>
+          {([[ "array", "Tableau (Array)" ], [ "grouped", "Groupé (Dict)" ]] as const).map(([mode,label]) => (
+            <button key={mode} onClick={() => onChange({ output_mode:mode })} style={{
+              ...S.btn, flex:1,
+              background: outputMode===mode ? "#1D9E7522" : "#111113",
+              borderColor: outputMode===mode ? "#1D9E75" : "#2a2a2e",
+              color: outputMode===mode ? "#1D9E75" : "#666",
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <SmartInput label={t("inspector.output_var", "Var. de sortie")} value={(data.output_var as string)??"pixelMatch"} onChange={v => onChange({ output_var:v })} />
+      
+      <div style={{ marginTop: 10, display: "flex", gap: 5, alignItems: "center" }}>
+        <button
+          onClick={async () => {
+            const pushCmdLog = useEditorStore.getState().pushCmdLog;
+            try {
+              const hexes = (data.expected_hexes as string[]) || (data.expected_hex ? [data.expected_hex as string] : ["#FF0000"]);
+              const res = await invoke<boolean>("test_pixel_color", {
+                x: Number(data.x ?? 0),
+                y: Number(data.y ?? 0),
+                w: Number(data.region_w ?? 100),
+                h: Number(data.region_h ?? 100),
+                screen: Number(data.screen ?? 0),
+                expectedHexes: hexes,
+                searchMode,
+                tolerance: Number(data.tolerance ?? 10)
+              });
+              const msg = res ? t("inspector.pixel.test.success", "Succès : La couleur correspond !") : t("inspector.pixel.test.failed", "Échec : La couleur ne correspond pas.");
+              pushCmdLog(nodeId, {
+                command: `TEST PIXEL COLOR (${searchMode})`,
+                stdout: msg,
+                stderr: "",
+                exit_code: res ? 0 : 1,
+                timestamp: new Date().toLocaleTimeString(),
+              });
+            } catch (e) {
+              pushCmdLog(nodeId, {
+                command: "TEST PIXEL COLOR",
+                stdout: "",
+                stderr: String(e),
+                exit_code: -1,
+                timestamp: new Date().toLocaleTimeString(),
+              });
+            }
+          }}
+          style={{ ...S.btn, flex: 1, background: "#1D9E7522", borderColor: "#1D9E75", color: "#1D9E75", fontWeight: "bold" }}
+        >
+          <i className="ti ti-test-pipe" style={{ fontSize: 11 }} /> {t("inspector.pixel.test_btn", "TESTER PIXEL")}
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -929,8 +1111,18 @@ function ImageFields({ data, onChange, nodeId }: { data:Record<string,unknown>; 
   const importFile = (e:React.ChangeEvent<HTMLInputElement>) => {
     const file=e.target.files?.[0]; if(!file) return;
     const reader=new FileReader();
-    reader.onload=()=>{ onChange({ template_b64:(reader.result as string).split(",")[1] }); };
+    reader.onload=()=>{ 
+      const newTemplate = (reader.result as string).split(",")[1];
+      const currentTemplates = (data.templates_b64 as string[]) || [];
+      onChange({ templates_b64: [...currentTemplates, newTemplate] }); 
+    };
     reader.readAsDataURL(file);
+  };
+  const removeTemplate = (index: number) => {
+    const currentTemplates = (data.templates_b64 as string[]) || [];
+    const newTemplates = [...currentTemplates];
+    newTemplates.splice(index, 1);
+    onChange({ templates_b64: newTemplates });
   };
   const captureRegion = async () => {
     try {
@@ -945,19 +1137,31 @@ function ImageFields({ data, onChange, nodeId }: { data:Record<string,unknown>; 
     try {
       const screenIdx = Number(data.screen ?? 0);
       const r = await pickScreenRegion(screenIdx);
-      const template=await invoke<string>("capture_region",{ x:r.x, y:r.y, width:r.w, height:r.h, screen:r.screen });
-      onChange({ template_b64:template, ...(alsoRegion ? { region_x:String(r.x), region_y:String(r.y), region_w:String(r.w), region_h:String(r.h), screen:r.screen } : {}) });
+      const template = await invoke<string>("capture_region",{ x:r.x, y:r.y, width:r.w, height:r.h, screen:r.screen });
+      const currentTemplates = (data.templates_b64 as string[]) || [];
+      onChange({ 
+        templates_b64: [...currentTemplates, template], 
+        ...(alsoRegion ? { region_x:String(r.x), region_y:String(r.y), region_w:String(r.w), region_h:String(r.h), screen:r.screen } : {}) 
+      });
     } catch {
       await message(t("inspector.image.capture_unavailable", "Capture indisponible dans ce contexte."), { kind: "error" });
     }
   };
+  const outputMode = (data.output_mode as string) ?? "array";
   return (
     <>
       <div style={S.row}>
-        <span style={S.label}>{t("inspector.image.template_label", "Template image")}</span>
-        {!!(data.template_b64 as string) && (
-          <div style={{ marginBottom:6, borderRadius:4, overflow:"hidden", border:"0.5px solid #2a2a2e", background:"#0d0d0f" }}>
-            <img src={`data:image/png;base64,${data.template_b64 as string}`} style={{ maxWidth:"100%", maxHeight:150, display:"block", objectFit:"contain", margin:"0 auto" }} />
+        <span style={S.label}>{t("inspector.image.template_label", "Template images")}</span>
+        {!!((data.templates_b64 as string[])?.length > 0) && (
+          <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingBottom: 5 }}>
+            {(data.templates_b64 as string[]).map((tmpl, idx) => (
+              <div key={idx} style={{ position: "relative", minWidth: 100, marginBottom:6, borderRadius:4, overflow:"hidden", border:"0.5px solid #2a2a2e", background:"#0d0d0f" }}>
+                <img src={`data:image/png;base64,${tmpl}`} style={{ maxWidth:"100%", maxHeight:100, display:"block", objectFit:"contain", margin:"0 auto" }} />
+                <button onClick={() => removeTemplate(idx)} style={{ position: "absolute", top: 2, right: 2, background: "rgba(0,0,0,0.5)", border: "none", color: "white", cursor: "pointer", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <i className="ti ti-x" style={{ fontSize: 10 }} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
         <div style={{ display:"flex", gap:5 }}>
@@ -1017,6 +1221,19 @@ function ImageFields({ data, onChange, nodeId }: { data:Record<string,unknown>; 
           ))}
         </div>
       </div>
+      <div style={S.row}>
+        <span style={S.label}>{t("inspector.image.output_mode_label", "Format de sortie")}</span>
+        <div style={{ display:"flex", gap:4 }}>
+          {([[ "array", "Tableau (Array)" ], [ "grouped", "Groupé (Dict)" ]] as const).map(([mode,label]) => (
+            <button key={mode} onClick={() => onChange({ output_mode:mode })} style={{
+              ...S.btn, flex:1,
+              background: outputMode===mode ? "#1D9E7522" : "#111113",
+              borderColor: outputMode===mode ? "#1D9E75" : "#2a2a2e",
+              color: outputMode===mode ? "#1D9E75" : "#666",
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
       <SmartInput label={t("inspector.image.output_box_label", "Var. de sortie (BOX dict)")} value={(data.output_var  as string)??"imgMatch"} onChange={v => onChange({ output_var:v })} />
       <ScreenPickerButton screen={Number(data.screen??0)} onSelect={s => onChange({ screen:s })} />
       <div style={{ marginTop: 10, display: "flex", gap: 5, alignItems: "center" }}>
@@ -1037,7 +1254,7 @@ function ImageFields({ data, onChange, nodeId }: { data:Record<string,unknown>; 
                 .catch(() => {});
 
               const res = await invoke<boolean>("test_image_match", {
-                templateB64: data.template_b64 ?? "",
+                templatesB64: (data.templates_b64 as string[]) || [],
                 x,
                 y,
                 w,
@@ -2212,82 +2429,7 @@ export function Inspector() {
 
             {/* ── Pixel color ── */}
             {kind==="pixel_color" && (
-              <>
-                <button
-                  onClick={pickPixelAndCoords}
-                  disabled={picking}
-                  style={{
-                    ...S.btn,
-                    width: "100%",
-                    marginBottom: 10,
-                    background: picking ? "#1D9E7522" : "#111113",
-                    borderColor: "#1D9E75",
-                    color: "#1D9E75",
-                    fontWeight: "bold",
-                  }}
-                >
-                  <i className={`ti ${picking ? "ti-loader" : "ti-color-picker"}`} style={{ marginRight: 6 }} />
-                  {picking ? t("inspector.pixel.picking_active", "Sélectionnez sur l'écran...") : t("inspector.pixel.picker_btn", "Pipette (Pos + Couleur)")}
-                </button>
-                <ColorField data={data} onChange={patch} />
-                 <div style={S.row}>
-                  <span style={S.label}>{t("inspector.pixel.tolerance", "Tolérance")} ({(data.tolerance as number)??10})</span>
-                  <input type="range" min={0} max={255} step={1} value={(data.tolerance as number)??10} onChange={e => patch({ tolerance:Number(e.target.value) })} style={{ width:"100%", accentColor:"#1D9E75" }} />
-                </div>
-                <SmartInput
-                  label={t("inspector.iterations_label", "Itérations")}
-                  value={data.infinite ? "∞" : ((data.iterations as string) ?? "1")}
-                  onChange={v => patch({ iterations: v })}
-                  disabled={!!data.infinite}
-                />
-                <BoolField label={t("inspector.infinite_mode", "Mode Infini (∞)")} value={!!data.infinite} onChange={v => {
-                  if (v) {
-                    patch({ infinite: v, iterations: "∞" });
-                  } else {
-                    patch({ infinite: v, iterations: "1" });
-                  }
-                }} />
-                <SmartInput label={t("inspector.cooldown_ms", "Cool-down (ms)")} value={(data.cooldown_ms as string)??"250"} onChange={v => patch({ cooldown_ms:v })} />
-                <SmartInput label={t("inspector.output_var", "Var. de sortie")} value={(data.output_var as string)??"pixelMatch"} onChange={v => patch({ output_var:v })} />
-                <div style={{ marginTop: 10, display: "flex", gap: 5, alignItems: "center" }}>
-                  <button
-                    onClick={async () => {
-                      const pushCmdLog = useEditorStore.getState().pushCmdLog;
-                      try {
-                        const expectedHex = data.color_format === "rgb"
-                          ? `#${((data.expected_r as number ?? 255) << 16 | (data.expected_g as number ?? 0) << 8 | (data.expected_b as number ?? 0)).toString(16).padStart(6, "0")}`
-                          : String(data.expected_hex ?? "#FF0000");
-                        const res = await invoke<boolean>("test_pixel_color", {
-                          x: Number(data.x ?? 0),
-                          y: Number(data.y ?? 0),
-                          screen: Number(data.screen ?? 0),
-                          expectedHex,
-                          tolerance: Number(data.tolerance ?? 10)
-                        });
-                        const msg = res ? t("inspector.pixel.test.success", "Succès : La couleur correspond !") : t("inspector.pixel.test.failed", "Échec : La couleur ne correspond pas.");
-                        pushCmdLog(node.id, {
-                          command: `TEST PIXEL COLOR (x: ${data.x ?? 0}, y: ${data.y ?? 0}, color: ${expectedHex})`,
-                          stdout: msg,
-                          stderr: "",
-                          exit_code: res ? 0 : 1,
-                          timestamp: new Date().toLocaleTimeString(),
-                        });
-                      } catch (e) {
-                        pushCmdLog(node.id, {
-                          command: "TEST PIXEL COLOR",
-                          stdout: "",
-                          stderr: String(e),
-                          exit_code: -1,
-                          timestamp: new Date().toLocaleTimeString(),
-                        });
-                      }
-                    }}
-                    style={{ ...S.btn, flex: 1, background: "#1D9E7522", borderColor: "#1D9E75", color: "#1D9E75", fontWeight: "bold" }}
-                  >
-                    <i className="ti ti-test-pipe" style={{ fontSize: 11 }} /> {t("inspector.pixel.test_btn", "TESTER PIXEL")}
-                  </button>
-                </div>
-              </>
+              <PixelColorFields data={data} onChange={patch} picking={picking} pickPixelAndCoords={pickPixelAndCoords} nodeId={node.id} />
             )}
 
             {/* ── Image match — inclut son propre ScreenPickerButton ── */}

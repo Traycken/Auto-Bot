@@ -507,18 +507,38 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
         }
 
         Block::SetVariable(b) => {
+            let check_math = |val: &str, vars: &Vars| -> bool {
+                if val.trim() == "0" { return true; }
+                let mut s = val.replace("%%", "\x00");
+                let mut names: Vec<_> = vars.keys().collect();
+                names.sort_by_key(|k| std::cmp::Reverse(k.len()));
+                for name in names {
+                    s = s.replace(&format!("%{name}"), vars[name].as_str());
+                }
+                s = s.replace('\x00', "%");
+                let tokens = tokenize(&s);
+                let mut parser = Parser::new(tokens);
+                if let Ok(v) = parser.parse() {
+                    matches!(v, EvalVal::Number(_) | EvalVal::Bool(_))
+                } else {
+                    false
+                }
+            };
+
             if !b.name.is_empty() {
-                let val = {
-                    let evaled = eval_full(&b.value, vars);
-                    if b.value.trim()!="0"&&evaled!=0.0 { fmt_num(evaled) } else { interpolate_text(&b.value, vars) }
+                let val = if check_math(&b.value, vars) {
+                    fmt_num(eval_full(&b.value, vars))
+                } else {
+                    interpolate_text(&b.value, vars)
                 };
                 vars.insert(b.name.clone(), val);
             }
             for v_pair in &b.vars {
                 if !v_pair.name.is_empty() {
-                    let val = {
-                        let evaled = eval_full(&v_pair.value, vars);
-                        if v_pair.value.trim()!="0"&&evaled!=0.0 { fmt_num(evaled) } else { interpolate_text(&v_pair.value, vars) }
+                    let val = if check_math(&v_pair.value, vars) {
+                        fmt_num(eval_full(&v_pair.value, vars))
+                    } else {
+                        interpolate_text(&v_pair.value, vars)
                     };
                     vars.insert(v_pair.name.clone(), val);
                 }
@@ -558,17 +578,42 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
             let cooldown   = eval_full(&b.cooldown_ms, vars) as u64;
             let x = eval_full(&b.x, vars) as i32;
             let y = eval_full(&b.y, vars) as i32;
-            let (er,eg,eb) = match b.color_format.as_str() {
-                "rgb" => (b.expected_r, b.expected_g, b.expected_b),
-                _ => { let h2=u32::from_str_radix(b.expected_hex.trim_start_matches('#'),16).unwrap_or(0xFF0000);
-                       (((h2>>16)&0xFF)as u8,((h2>>8)&0xFF)as u8,(h2&0xFF)as u8) }
-            };
-            let exp = ((er as u32)<<16)|((eg as u32)<<8)|(eb as u32);
-            let mut matched;
+            let w = (eval_full(&b.region_w, vars) as u32).max(1);
+            let hgt = (eval_full(&b.region_h, vars) as u32).max(1);
+            let mut expected_colors = Vec::new();
+            if !b.expected_hexes.is_empty() {
+                for hex in &b.expected_hexes {
+                    let h2=u32::from_str_radix(hex.trim_start_matches('#'),16).unwrap_or(0xFF0000);
+                    expected_colors.push(h2);
+                }
+            } else {
+                let exp = match b.color_format.as_str() {
+                    "rgb" => ((b.expected_r as u32)<<16)|((b.expected_g as u32)<<8)|(b.expected_b as u32),
+                    _ => u32::from_str_radix(b.expected_hex.trim_start_matches('#'),16).unwrap_or(0xFF0000)
+                };
+                expected_colors.push(exp);
+            }
+            
+            let search_mode = if b.search_mode == "zone" { "zone" } else { "pixel" };
+            let out_mode = if b.output_mode == "grouped" { "grouped" } else { "array" };
+            
+            let mut matched = false;
+            let mut last_boxes = vec![];
             let mut i = 0;
             loop {
                 if token.is_cancelled() { return Ok("not_found".into()); }
-                matched = crate::ipc::sample_pixel_color(x, y, b.screen, exp, b.tolerance);
+                if search_mode == "zone" {
+                    if let Ok(result) = crate::ipc::search_zone_colors(x, y, w, hgt, b.screen, &expected_colors, b.tolerance) {
+                        matched = result.matched;
+                        last_boxes = result.boxes;
+                    }
+                } else {
+                    matched = crate::ipc::sample_pixel_colors(x, y, b.screen, &expected_colors, b.tolerance);
+                    if matched {
+                        last_boxes = vec![crate::ipc::MatchBox { x, y, l: 1, h: 1 }];
+                    }
+                }
+                
                 let _ = h.emit("engine://pixel-result", matched);
                 if matched { break; }
                 if !b.infinite && b.iterations != "∞" {
@@ -580,7 +625,16 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
                 }
                 i += 1;
             }
-            if !b.output_var.is_empty() { vars.insert(b.output_var.clone(), matched.to_string()); }
+            if !b.output_var.is_empty() {
+                let out_var = interpolate_text(&b.output_var, vars);
+                if !out_var.is_empty() {
+                    let json = crate::ipc::match_boxes_to_json(&last_boxes, "all", out_mode);
+                    vars.insert(out_var, json);
+                }
+            }
+            if b.output_mode == "array" || b.output_mode == "grouped" {
+                return Ok("".into());
+            }
             if matched { "found".into() } else { "not_found".into() }
         }
 
@@ -592,14 +646,24 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
             let w = (eval_full(&b.region_w, vars) as u32).max(1);
             let hgt = (eval_full(&b.region_h, vars) as u32).max(1);
             let mode = if b.match_mode == "all" { "all" } else { "first" };
+            let out_mode = if b.output_mode == "grouped" { "grouped" } else { "array" };
             let mut matched = false;
             let mut last_boxes: Vec<crate::ipc::MatchBox> = vec![];
             let mut i = 0;
             loop {
                 if token.is_cancelled() { return Ok("not_found".into()); }
-                if let Ok(result) = crate::ipc::match_image_region(&b.template_b64, x, y, w, hgt, b.screen, threshold, mode) {
-                    matched = result.matched;
-                    last_boxes = result.boxes;
+                for template in &b.templates_b64 {
+                    if let Ok(result) = crate::ipc::match_image_region(template, x, y, w, hgt, b.screen, threshold, mode) {
+                        if result.matched {
+                            matched = true;
+                            if mode == "first" {
+                                last_boxes = result.boxes;
+                                break;
+                            } else {
+                                last_boxes.extend(result.boxes);
+                            }
+                        }
+                    }
                 }
                 let iterations_val = if b.infinite || b.iterations == "∞" { 999999 } else { (eval_full(&b.iterations, vars) as u64).max(1) };
                 let _ = h.emit("engine://image-result", serde_json::json!({"matched":matched,"iteration":i+1,"iterations":iterations_val}));
@@ -616,9 +680,12 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
             if !b.output_var.is_empty() {
                 let out_var = interpolate_text(&b.output_var, vars);
                 if !out_var.is_empty() {
-                    let json = crate::ipc::match_boxes_to_json(&last_boxes, mode);
+                    let json = crate::ipc::match_boxes_to_json(&last_boxes, mode, out_mode);
                     vars.insert(out_var, json);
                 }
+            }
+            if b.output_mode == "array" || b.output_mode == "grouped" {
+                return Ok("".into());
             }
             if matched { "found".into() } else { "not_found".into() }
         }
@@ -1409,6 +1476,123 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
                 "".into()
             }
         }
+
+        Block::Gamepad(b) => {
+            use vigem_client::{Client, TargetId, Xbox360Wired, XButtons, XGamepad};
+            use std::sync::Mutex;
+
+            // ─── Contrôleur virtuel persistant pour toute la durée du script ───
+            static VIGEM_PAD: OnceLock<Mutex<Option<Xbox360Wired<Client>>>> = OnceLock::new();
+
+            let pad_mutex = VIGEM_PAD.get_or_init(|| Mutex::new(None));
+
+            let action = b.action.clone();
+            let hold   = eval_full(&b.hold_ms, vars) as u64;
+
+            // Calculs avant de prendre le lock (pas d'await ci-dessous tant qu'on tient le lock)
+            let btn_mask: u16 = if action == "button" {
+                let mut mask: u16 = 0;
+                for btn_name in b.buttons.split('+') {
+                    let btn = btn_name.trim().to_uppercase();
+                    mask |= match btn.as_str() {
+                        "A"     => XButtons::A,
+                        "B"     => XButtons::B,
+                        "X"     => XButtons::X,
+                        "Y"     => XButtons::Y,
+                        "UP"    => XButtons::UP,
+                        "DOWN"  => XButtons::DOWN,
+                        "LEFT"  => XButtons::LEFT,
+                        "RIGHT" => XButtons::RIGHT,
+                        "LB"    => XButtons::LB,
+                        "RB"    => XButtons::RB,
+                        "START" => XButtons::START,
+                        "BACK"  => XButtons::BACK,
+                        "LS"    => XButtons::LTHUMB,
+                        "RS"    => XButtons::RTHUMB,
+                        "GUIDE" => XButtons::GUIDE,
+                        _       => 0,
+                    };
+                }
+                mask
+            } else { 0 };
+
+            let stick_val   = eval_full(&b.value, vars).clamp(-32768.0, 32767.0) as i16;
+            let trigger_val = eval_full(&b.value, vars).clamp(0.0, 255.0) as u8;
+            let stick_axis  = b.stick.clone();
+            let trig_side   = b.trigger.clone();
+
+            // ── Initialiser + appuyer (section synchrone, pas d'await) ──
+            {
+                let mut guard = pad_mutex.lock().unwrap();
+
+                // Initialise le contrôleur si besoin
+                if guard.is_none() {
+                    match Client::connect() {
+                        Ok(client) => {
+                            let id = TargetId::XBOX360_WIRED;
+                            let mut pad = Xbox360Wired::new(client, id);
+                            if pad.plugin().is_ok() {
+                                let _ = pad.wait_ready();
+                                *guard = Some(pad);
+                            } else {
+                                let _ = h.emit("engine://log", "[Manette] Impossible de brancher le contrôleur virtuel (ViGEmBus installé ?)".to_string());
+                            }
+                        }
+                        Err(e) => {
+                            let _ = h.emit("engine://log", format!("[Manette] Connexion ViGEmBus échouée: {e}"));
+                        }
+                    }
+                }
+
+                if let Some(ref mut pad) = *guard {
+                    let mut gamepad = XGamepad::default();
+                    match action.as_str() {
+                        "button" => {
+                            gamepad.buttons = XButtons(btn_mask);
+                            let _ = pad.update(&gamepad);
+                        }
+                        "stick" => {
+                            match stick_axis.as_str() {
+                                "LX" => gamepad.thumb_lx = stick_val,
+                                "LY" => gamepad.thumb_ly = stick_val,
+                                "RX" => gamepad.thumb_rx = stick_val,
+                                "RY" => gamepad.thumb_ry = stick_val,
+                                _    => {}
+                            }
+                            let _ = pad.update(&gamepad);
+                        }
+                        "trigger" => {
+                            match trig_side.as_str() {
+                                "LT" => gamepad.left_trigger  = trigger_val,
+                                "RT" => gamepad.right_trigger = trigger_val,
+                                _    => {}
+                            }
+                            let _ = pad.update(&gamepad);
+                        }
+                        other => {
+                            let _ = h.emit("engine://log", format!("[Manette] Action inconnue: {other}"));
+                        }
+                    }
+                }
+                // guard dropped here — lock released before any await
+            }
+
+            // ── Hold + relâchement (uniquement pour mode button) ──
+            if action == "button" && hold > 0 {
+                sleep(Duration::from_millis(hold)).await;  // lock est libre ici ✓
+
+                // Relâcher les boutons
+                let mut guard = pad_mutex.lock().unwrap();
+                if let Some(ref mut pad) = *guard {
+                    let mut gamepad = XGamepad::default();
+                    gamepad.buttons = XButtons(0);
+                    let _ = pad.update(&gamepad);
+                }
+            }
+
+            "".into()
+        }
+
     };
 
     let _ = h.emit("engine://block-done", serde_json::json!({"node_id": node_id, "kind": kind}));
@@ -2185,16 +2369,16 @@ fn eval_function(name: &str, args: Vec<EvalVal>) -> Result<EvalVal> {
             }
         }
         
-        "curpos" => {
+        "curpos" | "cursor" => {
             if args.is_empty() { return Ok(EvalVal::Number(0.0)); }
             let coord_type = evalval_to_string(&args[0]).to_lowercase();
             let screen_idx = args.get(1).map(|v| evalval_to_float(v) as usize);
-            let cursor = match crate::ipc::get_cursor_pos_now() {
+            let cursor_pos = match crate::ipc::get_cursor_pos_now() {
                 Ok(pos) => pos,
                 Err(_) => return Ok(EvalVal::Number(0.0)),
             };
-            let mut x = cursor.x;
-            let mut y = cursor.y;
+            let mut x = cursor_pos.x;
+            let mut y = cursor_pos.y;
             if let Some(scr) = screen_idx {
                 use xcap::Monitor;
                 if let Ok(monitors) = Monitor::all() {
@@ -2438,6 +2622,7 @@ fn bk(b: &Block) -> &'static str {
         Block::Iterations(_)=>"iterations",Block::ForEach(_)=>"foreach",
         Block::Switch(_)=>"switch",Block::Console(_)=>"console",
         Block::Ia(_)=>"ia",Block::Vpo(_)=>"vpo",
+        Block::Gamepad(_)=>"gamepad",
     }
 }
 

@@ -94,20 +94,56 @@ pub async fn capture_pixel_color(x:i32, y:i32, screen:i32, expected:u32, toleran
     if lx>=img.width()||ly>=img.height() { return Err("Coordinates out of bounds".into()); }
     let px = img.get_pixel(lx,ly);
     let (r,g,b) = (px[0],px[1],px[2]);
-    let matched = sample_pixel_color(x,y,screen,expected,tolerance);
+    let matched = sample_pixel_colors(x,y,screen,&[expected],tolerance);
     Ok(PixelColorResult { r, g, b, hex:format!("#{:02X}{:02X}{:02X}",r,g,b), matched })
 }
 
-pub fn sample_pixel_color(x:i32, y:i32, screen_idx:i32, expected:u32, tolerance:u8) -> bool {
+pub fn sample_pixel_colors(x:i32, y:i32, screen_idx:i32, expected_colors: &[u32], tolerance:u8) -> bool {
     let monitors = match Monitor::all() { Ok(m) => m, Err(_) => return false };
     let Some(mon) = monitors.into_iter().nth(screen_idx.unsigned_abs() as usize) else { return false; };
     let Ok(img) = mon.capture_image() else { return false; };
     let lx = (x-mon.x()).max(0) as u32; let ly = (y-mon.y()).max(0) as u32;
     if lx>=img.width()||ly>=img.height() { return false; }
     let px = img.get_pixel(lx,ly);
-    let (er,eg,eb) = (((expected>>16)&0xFF) as i16, ((expected>>8)&0xFF) as i16, (expected&0xFF) as i16);
     let t = tolerance as i16;
-    (px[0] as i16-er).abs()<=t && (px[1] as i16-eg).abs()<=t && (px[2] as i16-eb).abs()<=t
+    for &expected in expected_colors {
+        let (er,eg,eb) = (((expected>>16)&0xFF) as i16, ((expected>>8)&0xFF) as i16, (expected&0xFF) as i16);
+        if (px[0] as i16-er).abs()<=t && (px[1] as i16-eg).abs()<=t && (px[2] as i16-eb).abs()<=t {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn search_zone_colors(x:i32, y:i32, w:u32, h:u32, screen_idx:i32, expected_colors: &[u32], tolerance:u8) -> Result<MatchImageResult, String> {
+    let monitors = Monitor::all().map_err(|e| e.to_string())?;
+    let mon = monitors.into_iter().nth(screen_idx.unsigned_abs() as usize).ok_or("Screen not found")?;
+    let img = mon.capture_image().map_err(|e| e.to_string())?;
+    let lx = (x-mon.x()).max(0) as u32; let ly = (y-mon.y()).max(0) as u32;
+    if lx>=img.width()||ly>=img.height() { return Ok(MatchImageResult::default()); }
+    let rw = w.min(img.width().saturating_sub(lx));
+    let rh = h.min(img.height().saturating_sub(ly));
+    
+    let t = tolerance as i16;
+    let mut boxes = Vec::new();
+    for sy in ly..ly+rh {
+        for sx in lx..lx+rw {
+            let px = img.get_pixel(sx,sy);
+            for &expected in expected_colors {
+                let (er,eg,eb) = (((expected>>16)&0xFF) as i16, ((expected>>8)&0xFF) as i16, (expected&0xFF) as i16);
+                if (px[0] as i16-er).abs()<=t && (px[1] as i16-eg).abs()<=t && (px[2] as i16-eb).abs()<=t {
+                    boxes.push(MatchBox {
+                        x: mon.x() + sx as i32,
+                        y: mon.y() + sy as i32,
+                        l: 1,
+                        h: 1,
+                    });
+                    break;
+                }
+            }
+        }
+    }
+    Ok(MatchImageResult { matched: !boxes.is_empty(), boxes })
 }
 
 pub fn match_image_region(template_b64:&str, x:i32, y:i32, width:u32, height:u32, screen_idx:i32, threshold:f64, match_mode:&str) -> Result<MatchImageResult,String> {
@@ -149,8 +185,27 @@ pub struct MatchBox { pub x: i32, pub y: i32, pub l: u32, pub h: u32 }
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct MatchImageResult { pub matched: bool, pub boxes: Vec<MatchBox> }
 
-pub fn match_boxes_to_json(boxes: &[MatchBox], mode: &str) -> String {
-    if boxes.is_empty() { return "{}".into(); }
+pub fn match_boxes_to_json(boxes: &[MatchBox], mode: &str, out_mode: &str) -> String {
+    if boxes.is_empty() { 
+        if out_mode == "array" { return "[]".into(); }
+        return "{}".into(); 
+    }
+    
+    if out_mode == "array" {
+        let mut arr = Vec::new();
+        let limit = if mode == "all" { boxes.len() } else { 1 };
+        for b in boxes.iter().take(limit) {
+            let mut map = serde_json::Map::new();
+            map.insert("X".into(), serde_json::Value::Number(b.x.into()));
+            map.insert("Y".into(), serde_json::Value::Number(b.y.into()));
+            map.insert("L".into(), serde_json::Value::Number(b.l.into()));
+            map.insert("H".into(), serde_json::Value::Number(b.h.into()));
+            arr.push(serde_json::Value::Object(map));
+        }
+        return serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into());
+    }
+
+    // grouped mode
     if mode == "all" {
         let mut map = serde_json::Map::new();
         for (i, b) in boxes.iter().enumerate() {
@@ -483,17 +538,42 @@ pub async fn load_translations(lang: String) -> Result<std::collections::HashMap
 
     Ok(map)
 }#[tauri::command]
-pub async fn test_pixel_color(x: i32, y: i32, screen: i32, expected_hex: String, tolerance: u8) -> Result<bool, String> {
-    let expected = u32::from_str_radix(expected_hex.trim_start_matches('#'), 16)
-        .map_err(|e| format!("Hex color invalide: {e}"))?;
-    Ok(sample_pixel_color(x, y, screen, expected, tolerance))
+pub async fn test_pixel_color(
+    x: i32, 
+    y: i32, 
+    w: u32, 
+    h: u32, 
+    screen: i32, 
+    expected_hexes: Vec<String>, 
+    search_mode: String, 
+    tolerance: u8
+) -> Result<bool, String> {
+    let mut expected_colors = Vec::new();
+    for hex in expected_hexes {
+        let parsed = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0xFF0000);
+        expected_colors.push(parsed);
+    }
+    
+    if search_mode == "zone" {
+        if let Ok(res) = search_zone_colors(x, y, w, h, screen, &expected_colors, tolerance) {
+            Ok(res.matched)
+        } else {
+            Ok(false)
+        }
+    } else {
+        Ok(sample_pixel_colors(x, y, screen, &expected_colors, tolerance))
+    }
 }
 
 #[tauri::command]
-pub async fn test_image_match(template_b64: String, x: i32, y: i32, w: u32, h: u32, screen: i32, threshold: String) -> Result<bool, String> {
-    let thresh = threshold.parse::<f64>().unwrap_or(0.9);
-    let res = match_image_region(&template_b64, x, y, w, h, screen, thresh, "first")?;
-    Ok(res.matched)
+pub async fn test_image_match(templates_b64: Vec<String>, x: i32, y: i32, w: u32, h: u32, screen: i32, threshold: String) -> Result<bool, String> {
+    let t = threshold.parse::<f64>().unwrap_or(0.9);
+    for template in &templates_b64 {
+        if let Ok(res) = match_image_region(template, x, y, w, h, screen, t, "first") {
+            if res.matched { return Ok(true); }
+        }
+    }
+    Ok(false)
 }
 
 #[tauri::command]

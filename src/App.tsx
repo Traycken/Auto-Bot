@@ -180,7 +180,20 @@ function AppInner() {
   const { open: helpOpen, kind: helpKind, setOpen: setHelpOpen, setKind: setHelpKind, registerRef } = useHelpModal();
   useEffect(() => { registerRef(); }, [registerRef]);
 
-  useEffect(() => initEngineListeners(), []); // eslint-disable-line
+  useEffect(() => {
+    initEngineListeners();
+    invoke<string | null>("get_startup_file")
+      .then(path => {
+        if (path) {
+          if (path.endsWith(".abfnc")) {
+            useEditorStore.getState().openFunctionWithPath(path);
+          } else {
+            useEditorStore.getState().openSequenceWithPath(path);
+          }
+        }
+      })
+      .catch(console.error);
+  }, []); // eslint-disable-line
 
   // Listen for open-help events from MacroBlockNode "?" button
   useEffect(() => {

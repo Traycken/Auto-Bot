@@ -124,6 +124,7 @@ pub enum Block {
     Console(ConsoleBlock),
     Ia(IaBlock),
     Vpo(VpoBlock),
+    Gamepad(GamepadBlock),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +166,27 @@ pub struct IaBlock {
     #[serde(default)] pub width: String,
     #[serde(default)] pub height: String,
     #[serde(default)] pub screen: i32,
+}
+
+fn default_gamepad_action() -> String { "button".into() }
+fn default_gamepad_stick() -> String { "LX".into() }
+fn default_gamepad_trigger() -> String { "LT".into() }
+fn default_gamepad_hold() -> String { "100".into() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GamepadBlock {
+    /// Action à effectuer : "button" | "stick" | "trigger"
+    #[serde(default = "default_gamepad_action")] pub action: String,
+    /// Boutons à simuler (séparés par +), ex. "A", "A+B", "UP"
+    #[serde(default)] pub buttons: String,
+    /// Joystick cible : "LX" | "LY" | "RX" | "RY"
+    #[serde(default = "default_gamepad_stick")] pub stick: String,
+    /// Gâchette cible : "LT" | "RT"
+    #[serde(default = "default_gamepad_trigger")] pub trigger: String,
+    /// Valeur : [-32768..32767] pour stick, [0..255] pour trigger
+    #[serde(default = "default_str_0")] pub value: String,
+    /// Durée de maintien en ms (mode button)
+    #[serde(default = "default_gamepad_hold")] pub hold_ms: String,
 }
 
 fn default_vpo_threshold() -> String { "0.5".into() }
@@ -368,24 +390,29 @@ pub struct OcrBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PixelColorBlock {
+    #[serde(default)]                        pub search_mode: String,
     #[serde(default="default_str_0")]       pub x: String,
     #[serde(default="default_str_0")]       pub y: String,
+    #[serde(default="default_str_100")]     pub region_w: String,
+    #[serde(default="default_str_100")]     pub region_h: String,
     #[serde(default="default_screen")]      pub screen: i32,
     #[serde(default)]                       pub color_format: String,
+    #[serde(default)]                       pub expected_hexes: Vec<String>,
     #[serde(default="default_hex")]         pub expected_hex: String,
     #[serde(default)]                       pub expected_r: u8,
     #[serde(default)]                       pub expected_g: u8,
     #[serde(default)]                       pub expected_b: u8,
     #[serde(default="default_tolerance")]   pub tolerance: u8,
     #[serde(default)]                       pub output_var: String,
-    #[serde(default="default_iterations")]   pub iterations: String,
-    #[serde(default="default_cooldown_ms")]  pub cooldown_ms: String,
+    #[serde(default="default_iterations")]  pub iterations: String,
+    #[serde(default="default_cooldown_ms")] pub cooldown_ms: String,
+    #[serde(default)]                       pub output_mode: String,
     #[serde(default)]                       pub infinite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageMatchBlock {
-    #[serde(default)]                        pub template_b64: String,
+    #[serde(default)]                        pub templates_b64: Vec<String>,
     #[serde(default="default_str_0")]        pub region_x: String,
     #[serde(default="default_str_0")]        pub region_y: String,
     #[serde(default="default_str_300")]      pub region_w: String,
@@ -396,6 +423,7 @@ pub struct ImageMatchBlock {
     #[serde(default="default_cooldown_ms")]  pub cooldown_ms: String,
     #[serde(default)]                        pub output_var: String,
     #[serde(default = "default_match_first")] pub match_mode: String,
+    #[serde(default)]                        pub output_mode: String,
     #[serde(default)]                        pub infinite: bool,
 }
 

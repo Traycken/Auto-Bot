@@ -107,17 +107,23 @@ export interface RandomBlock {
 
 export interface PixelColorBlock {
   kind: "pixel_color";
-  x: string; y: string; screen: number; color_format: ColorFormat;
+  search_mode?: "pixel" | "zone";
+  x: string; y: string;
+  region_w?: string; region_h?: string;
+  screen: number; color_format: ColorFormat;
+  expected_hexes?: string[]; // Support multiple expected colors
   expected_hex: string; expected_r: number; expected_g: number; expected_b: number;
   expected_h: number; expected_s: number; expected_v: number;
   tolerance: number; output_var: string;
   iterations: string; cooldown_ms: string;
+  output_mode?: "grouped" | "array";
 }
 export interface ImageMatchBlock {
   kind: "image_match";
-  template_b64: string; region_x: string; region_y: string; region_w: string; region_h: string;
+  templates_b64: string[]; region_x: string; region_y: string; region_w: string; region_h: string;
   screen: number; threshold: string; iterations: string; cooldown_ms: string; output_var: string;
   match_mode: "first" | "all";
+  output_mode?: "grouped" | "array"; // NEW: comment la donnée est formattée
 }
 export interface OcrBlock {
   kind: "ocr";
@@ -325,9 +331,9 @@ export const BLOCK_CATALOG: BlockMeta[] = [
 
   // ── Vision ────────────────────────────────────────────────────────────────
   { kind: "pixel_color",  label: "Couleur pixel",     category: "vision", color: "#1D9E75", icon: "ti-color-picker",
-    defaultData: { x:"0", y:"0", screen:0, color_format:"hex" as ColorFormat, expected_hex:"#FF0000", expected_r:255, expected_g:0, expected_b:0, expected_h:0, expected_s:100, expected_v:100, tolerance:10, output_var:"pixelMatch", iterations:"1", cooldown_ms:"250" } },
+    defaultData: { search_mode: "pixel", x:"0", y:"0", region_w:"100", region_h:"100", screen:0, color_format:"hex" as ColorFormat, expected_hexes: ["#FF0000"], expected_hex:"#FF0000", expected_r:255, expected_g:0, expected_b:0, expected_h:0, expected_s:100, expected_v:100, tolerance:10, output_var:"pixelMatch", iterations:"1", cooldown_ms:"250", output_mode: "array" } },
   { kind: "image_match",  label: "Comparateur image", category: "vision", color: "#1D9E75", icon: "ti-photo-search",
-    defaultData: { template_b64:"", region_x:"0", region_y:"0", region_w:"400", region_h:"300", screen:0, threshold:"0.9", iterations:"1", cooldown_ms:"250", output_var:"imgMatch", match_mode:"first" as const } },
+    defaultData: { templates_b64:[], region_x:"0", region_y:"0", region_w:"400", region_h:"300", screen:0, threshold:"0.9", iterations:"1", cooldown_ms:"250", output_var:"imgMatch", match_mode:"first" as const, output_mode:"array" } },
   { kind: "ocr",          label: "OCR",               category: "vision", color: "#1D9E75", icon: "ti-scan",
     defaultData: { x:"0", y:"0", width:"300", height:"100", screen:0, lang:"fra", output_var:"ocrText", iterations:"1", cooldown_ms:"250", match_text:"", match_case:false, match_whole_word:false, use_regex:false, tolerance:0 } },
 

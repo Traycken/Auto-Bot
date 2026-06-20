@@ -210,6 +210,12 @@ export function MenuBar({ onOpenHelp, onOpenSettings, onOpenAbout }: { onOpenHel
       action: saveActiveTab,
     },
     {
+      label: t("menu.quick_save", "Sauvegarde rapide"),
+      icon: "ti-bolt",
+      shortcut: "Ctrl+Shift+S",
+      action: useEditorStore.getState().quickSaveActiveTab,
+    },
+    {
       label: t("menu.save_as", "Enregistrer sous…"),
       icon: "ti-device-floppy",
       action: saveActiveTabAs,

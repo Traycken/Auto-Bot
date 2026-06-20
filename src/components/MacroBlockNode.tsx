@@ -1,8 +1,8 @@
 import { memo, useState } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { CmdHistoryModal } from "./CmdHistoryModal";
 import { useNodeWidth, useEditorStore, t } from "../store/editorStore";
-
+import { useEffect, useRef } from "react";
 
 const BLACKLIST = new Set([
   "label","color","icon","kind","children",
@@ -35,14 +35,51 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
     .filter(([k]) => !BLACKLIST.has(k))
     .slice(0, 3);
 
-  const hasDualHandles = (DUAL_HANDLE_KINDS.has(d.kind) && !d.infinite) ||
+  const hasDualHandles = (DUAL_HANDLE_KINDS.has(d.kind) && !d.infinite && d.output_mode !== "array" && d.output_mode !== "grouped") ||
     (d.kind === "vpo" && d.mode === "detect" && typeof d.class_name === "string" && d.class_name.trim() !== "");
 
-  const isInfiniteSingleHandle = DUAL_HANDLE_KINDS.has(d.kind) && !!d.infinite;
+  const isInfiniteSingleHandle = DUAL_HANDLE_KINDS.has(d.kind) && !!d.infinite && d.output_mode !== "array" && d.output_mode !== "grouped";
 
   const active = useEditorStore(s => s.activeNodeId === id);
   const waitProgress = useEditorStore(s => s.waitProgress[id]);
   const currentTick = useEditorStore(s => s.forTicks[id]);
+
+  const updateNodeInternals = useUpdateNodeInternals();
+  const prevHandles = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentMode = hasDualHandles ? "dual" : isInfiniteSingleHandle ? "infinite" : LOOP_KINDS.has(d.kind) ? "loop" : "single";
+    if (prevHandles.current !== null && prevHandles.current !== currentMode) {
+      updateNodeInternals(id);
+      
+      const validHandles = new Set<string | null | undefined>();
+      if (hasDualHandles) {
+        validHandles.add("found");
+        validHandles.add("not_found");
+      } else if (isInfiniteSingleHandle) {
+        validHandles.add("found");
+      } else if (LOOP_KINDS.has(d.kind)) {
+        validHandles.add("body");
+        validHandles.add("end");
+      } else {
+        validHandles.add(null);
+        validHandles.add(undefined);
+      }
+      
+      const state = useEditorStore.getState();
+      const activeTab = state.tabs.find(t => t.id === state.activeTabId);
+      if (activeTab) {
+        const invalidEdges = activeTab.edges.filter(e => 
+          e.source === id && !validHandles.has(e.sourceHandle)
+        );
+        if (invalidEdges.length > 0) {
+          const changes = invalidEdges.map(e => ({ type: "remove" as const, id: e.id }));
+          state.onEdgesChange(changes);
+        }
+      }
+    }
+    prevHandles.current = currentMode;
+  }, [hasDualHandles, isInfiniteSingleHandle, id, d.kind, updateNodeInternals]);
 
   const openHelp = (e: React.MouseEvent) => {
     e.stopPropagation();

@@ -5,6 +5,11 @@ mod overlay;
 
 use tauri::Manager;
 
+#[tauri::command]
+fn get_startup_file() -> Option<String> {
+    std::env::args().find(|arg| arg.ends_with(".absqc") || arg.ends_with(".absq") || arg.ends_with(".abfnc"))
+}
+
 pub fn run() {
     env_logger::init();
 
@@ -32,6 +37,10 @@ pub fn run() {
                     let _ = std::fs::create_dir_all(&fn_dir);
                     log::info!("Fonctions dir: {}", fn_dir.display());
 
+                    let seq_dir = dir.join("Séquences");
+                    let _ = std::fs::create_dir_all(&seq_dir);
+                    log::info!("Séquences dir: {}", seq_dir.display());
+
                     // Create AI model and YOLO directories
                     let _ = std::fs::create_dir_all(dir.join("IA").join("VLM").join("Models"));
                     let _ = std::fs::create_dir_all(dir.join("IA").join("LLM").join("Models"));
@@ -58,6 +67,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_startup_file,
             // Sequence
             ipc::run_sequence,
             ipc::stop_sequence,
