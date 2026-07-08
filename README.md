@@ -179,3 +179,16 @@ Les fonctions permettent de modulariser vos automatisations et de les réutilise
 | **`Ctrl + C`** | Copier les nœuds sélectionnés |
 | **`Ctrl + V`** | Coller les nœuds copiés |
 | **`Suppr` / `Delete`** | Supprimer les nœuds ou connexions sélectionnés |
+
+<div align="center">
+  <img src="./1.png" alt="AutoBot" width="125">
+  <br>
+  <span style="margin-top: 24px;"><strong>AutoBot</strong></span>
+  <br><br>
+</div>
+<div align="center">
+  <img src="./2.png" alt="AutoBot" width="125">
+  <br>
+  <span style="margin-top: 24px;"><strong>AutoBot</strong></span>
+  <br><br>
+</div>
