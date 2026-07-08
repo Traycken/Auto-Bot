@@ -546,7 +546,8 @@ pub async fn test_pixel_color(
     screen: i32, 
     expected_hexes: Vec<String>, 
     search_mode: String, 
-    tolerance: u8
+    tolerance: u8,
+    pixels: Option<Vec<crate::blocks::PixelCoordinate>>
 ) -> Result<bool, String> {
     let mut expected_colors = Vec::new();
     for hex in expected_hexes {
@@ -554,7 +555,19 @@ pub async fn test_pixel_color(
         expected_colors.push(parsed);
     }
     
-    if search_mode == "zone" {
+    if search_mode == "multiple" {
+        if let Some(pixels_list) = pixels {
+            for p in pixels_list {
+                let px = p.x.parse::<i32>().unwrap_or(0);
+                let py = p.y.parse::<i32>().unwrap_or(0);
+                let hex_val = u32::from_str_radix(p.expected_hex.trim_start_matches('#'), 16).unwrap_or(0xFF0000);
+                if sample_pixel_colors(px, py, screen, &[hex_val], tolerance) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    } else if search_mode == "zone" {
         if let Ok(res) = search_zone_colors(x, y, w, h, screen, &expected_colors, tolerance) {
             Ok(res.matched)
         } else {
@@ -1055,6 +1068,7 @@ pub async fn import_yolo_model(file_path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn test_ia(
+    _handle: tauri::AppHandle,
     mode: String,
     prompt: String,
     api_mode: String,
@@ -1066,109 +1080,147 @@ pub async fn test_ia(
     w: u32,
     h: u32,
     screen: i32,
+    auto_retry: bool,
+    expected_type: String,
+    expected_schema: String,
 ) -> Result<String, String> {
-    let client = reqwest::Client::new();
-    let base_url = if api_url.is_empty() {
-        if api_mode == "local" {
-            "http://localhost:11434/v1".to_string()
+    let max_attempts = if auto_retry { 4 } else { 1 };
+    let mut last_response = String::new();
+    let mut retry_logs = String::new();
+
+    for attempt in 1..=max_attempts {
+        let client = reqwest::Client::new();
+        let base_url = if api_url.is_empty() {
+            if api_mode == "local" {
+                "http://localhost:11434/v1".to_string()
+            } else {
+                "https://api.openai.com/v1".to_string()
+            }
         } else {
-            "https://api.openai.com/v1".to_string()
-        }
-    } else {
-        api_url.trim_end_matches('/').to_string()
-    };
+            api_url.trim_end_matches('/').to_string()
+        };
 
-    let url = if base_url.ends_with("/chat/completions") {
-        base_url
-    } else if base_url.ends_with("/v1") {
-        format!("{}/chat/completions", base_url)
-    } else {
-        format!("{}/v1/chat/completions", base_url)
-    };
+        let url = if base_url.ends_with("/chat/completions") {
+            base_url
+        } else if base_url.ends_with("/v1") {
+            format!("{}/chat/completions", base_url)
+        } else {
+            format!("{}/v1/chat/completions", base_url)
+        };
 
-    let b64_img = if mode == "image" {
-        match crate::engine::capture_image_for_ocr(x, y, w, h, screen) {
-            Ok(cropped) => {
-                let mut buf = Vec::new();
-                if cropped.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_ok() {
-                    use base64::Engine as _;
-                    Some(base64::engine::general_purpose::STANDARD.encode(&buf))
-                } else {
-                    None
+        let b64_img = if mode == "image" {
+            match crate::engine::capture_image_for_ocr(x, y, w, h, screen) {
+                Ok(cropped) => {
+                    let mut buf = Vec::new();
+                    if cropped.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_ok() {
+                        use base64::Engine as _;
+                        Some(base64::engine::general_purpose::STANDARD.encode(&buf))
+                    } else {
+                        None
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("Erreur de capture d'image: {}", e));
                 }
             }
-            Err(e) => {
-                return Err(format!("Erreur de capture d'image: {}", e));
+        } else {
+            None
+        };
+
+        let messages = if let Some(b64) = b64_img {
+            serde_json::json!([
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": format!("data:image/png;base64,{}", b64)
+                            }
+                        }
+                    ]
+                }
+            ])
+        } else {
+            serde_json::json!([
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ])
+        };
+
+        let payload = serde_json::json!({
+            "model": model_name,
+            "messages": messages
+        });
+
+        let mut req = client.post(&url);
+        if !api_key.is_empty() {
+            req = req.bearer_auth(&api_key);
+        }
+
+        let res = req.json(&payload).send().await.map_err(|e| format!("Erreur HTTP: {e}"))?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            let err_msg = format!("Erreur API ({status}): {body}");
+            if attempt < max_attempts {
+                retry_logs.push_str(&format!("[Tentative {}/{} échouée: {}]\n", attempt, max_attempts, err_msg));
+                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                continue;
+            } else {
+                return Err(format!("Toutes les tentatives ont échoué. Dernière erreur: {err_msg}"));
             }
         }
-    } else {
-        None
-    };
 
-    let messages = if let Some(b64) = b64_img {
-        serde_json::json!([
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": format!("data:image/png;base64,{}", b64)
-                        }
+        #[derive(serde::Deserialize)]
+        struct ChatChoice {
+            message: ChatMessage,
+        }
+        #[derive(serde::Deserialize)]
+        struct ChatMessage {
+            content: Option<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct ChatResponse {
+            choices: Option<Vec<ChatChoice>>,
+        }
+
+        let chat_resp = res.json::<ChatResponse>().await.map_err(|e| format!("Erreur JSON: {e}"))?;
+        let content = chat_resp.choices
+            .and_then(|c| c.into_iter().next())
+            .and_then(|choice| choice.message.content)
+            .unwrap_or_else(|| "Réponse vide de l'API".to_string());
+
+        last_response = content;
+
+        if auto_retry {
+            match crate::engine::validate_ia_output(&last_response, &expected_type, &expected_schema) {
+                Ok(_) => {
+                    break;
+                }
+                Err(err_msg) => {
+                    if attempt < max_attempts {
+                        retry_logs.push_str(&format!("[Tentative {}/{} échouée: {}]\n", attempt, max_attempts, err_msg));
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                    } else {
+                        retry_logs.push_str(&format!("[Tentative {}/{} échouée: {}]\n", attempt, max_attempts, err_msg));
                     }
-                ]
+                }
             }
-        ])
+        }
+    }
+
+    if !retry_logs.is_empty() {
+        Ok(format!("=== HISTORIQUE DES RETRIES ===\n{}\n=== RÉPONSE FINALE ===\n{}", retry_logs, last_response))
     } else {
-        serde_json::json!([
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ])
-    };
-
-    let payload = serde_json::json!({
-        "model": model_name,
-        "messages": messages
-    });
-
-    let mut req = client.post(&url);
-    if !api_key.is_empty() {
-        req = req.bearer_auth(&api_key);
+        Ok(last_response)
     }
-
-    let res = req.json(&payload).send().await.map_err(|e| format!("Erreur HTTP: {e}"))?;
-    if !res.status().is_success() {
-        let status = res.status();
-        let body = res.text().await.unwrap_or_default();
-        return Err(format!("Erreur API ({status}): {body}"));
-    }
-
-    #[derive(serde::Deserialize)]
-    struct ChatChoice {
-        message: ChatMessage,
-    }
-    #[derive(serde::Deserialize)]
-    struct ChatMessage {
-        content: Option<String>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ChatResponse {
-        choices: Option<Vec<ChatChoice>>,
-    }
-
-    let chat_resp = res.json::<ChatResponse>().await.map_err(|e| format!("Erreur JSON: {e}"))?;
-    let content = chat_resp.choices
-        .and_then(|c| c.into_iter().next())
-        .and_then(|choice| choice.message.content)
-        .ok_or_else(|| "Réponse vide de l'API".to_string())?;
-
-    Ok(content)
 }
 
 #[tauri::command]

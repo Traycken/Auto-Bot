@@ -1,9 +1,4 @@
-<div align="center">
-  <img src="./AutoBot.svg" alt="AutoBot" width="125">
-  <br>
-  <span style="margin-top: 24px;"><strong>AutoBot</strong></span>
-  <br><br>
-</div>
+# 🤖 Auto Bot
 
 [![Tauri Version](https://img.shields.io/badge/Tauri-v2.x-0F0F11?logo=tauri&logoColor=FFC131&labelColor=24292e)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-1.77%2B-000000?logo=rust&logoColor=white&labelColor=24292e)](https://www.rust-lang.org/)
@@ -166,6 +161,18 @@ Les fonctions permettent de modulariser vos automatisations et de les réutilise
 * **Vérifier couleur** (`pixel_color`) : Lit la couleur d'un pixel à l'écran pour aiguiller la logique.
 * **Template Matching** (`image_match`) : Recherche une portion d'image (ex: un bouton précis) sur l'écran.
 * **OCR** (`ocr`) : *À venir* — Extraction de texte depuis une zone écran.
+
+### 🧮 Expressions & Fonctions Intégrées
+Les champs textes et valeurs peuvent inclure des variables (`%maVar`) et des fonctions intégrées évaluées dynamiquement à l'exécution :
+* `curpos(x)` ou `curpos(y)` : Position actuelle de la souris.
+* `random(min, max)` : Génère un nombre aléatoire.
+* `count(%array)` : Longueur d'un tableau ou d'une chaîne.
+* `max(...)`, `min(...)` : Trouve le maximum / minimum.
+* `uptime()` : Temps d'exécution depuis le lancement en millisecondes.
+* `vectdiff(a, b)` / `setdiff(a, b)` : Opérations avancées sur les tableaux et ensembles.
+* `sort(%array)` : Trie un tableau.
+* `select(%obj, debut, long)` : Extrait une sous-partie d'une liste ou d'un texte.
+* `round()`, `floor()`, `ceil()`, `abs()`, `sqrt()`, `sin()`, `cos()`, `pi()` : Fonctions mathématiques usuelles.
 
 ---
 
