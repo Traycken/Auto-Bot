@@ -594,15 +594,34 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
                 expected_colors.push(exp);
             }
             
-            let search_mode = if b.search_mode == "zone" { "zone" } else { "pixel" };
+            let search_mode = if b.search_mode == "zone" {
+                "zone"
+            } else if b.search_mode == "multiple" {
+                "multiple"
+            } else {
+                "pixel"
+            };
             let out_mode = if b.output_mode == "grouped" { "grouped" } else { "array" };
             
             let mut matched = false;
+            let mut matched_idx: Option<usize> = None;
             let mut last_boxes = vec![];
             let mut i = 0;
             loop {
                 if token.is_cancelled() { return Ok("not_found".into()); }
-                if search_mode == "zone" {
+                if search_mode == "multiple" {
+                    for (idx, p) in b.pixels.iter().enumerate() {
+                        let px = eval_full(&p.x, vars) as i32;
+                        let py = eval_full(&p.y, vars) as i32;
+                        let hex_val = u32::from_str_radix(p.expected_hex.trim_start_matches('#'), 16).unwrap_or(0xFF0000);
+                        if crate::ipc::sample_pixel_colors(px, py, b.screen, &[hex_val], b.tolerance) {
+                            matched_idx = Some(idx);
+                            matched = true;
+                            last_boxes = vec![crate::ipc::MatchBox { x: px, y: py, l: 1, h: 1 }];
+                            break;
+                        }
+                    }
+                } else if search_mode == "zone" {
                     if let Ok(result) = crate::ipc::search_zone_colors(x, y, w, hgt, b.screen, &expected_colors, b.tolerance) {
                         matched = result.matched;
                         last_boxes = result.boxes;
@@ -635,7 +654,15 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
             if b.output_mode == "array" || b.output_mode == "grouped" {
                 return Ok("".into());
             }
-            if matched { "found".into() } else { "not_found".into() }
+            if search_mode == "multiple" {
+                if let Some(idx) = matched_idx {
+                    format!("found_{}", idx)
+                } else {
+                    "not_found".into()
+                }
+            } else {
+                if matched { "found".into() } else { "not_found".into() }
+            }
         }
 
         Block::ImageMatch(b) => {
@@ -1188,129 +1215,157 @@ async fn exec_node(h: &AppHandle, graph: &Graph, adj: &Adj, node_id: &str, block
             let _ = h.emit("engine://log", log_text);
             "".into()
         }
-
         Block::Ia(b) => {
-            let prompt = resolve_expressions_in_text(&b.prompt, vars);
+            let max_attempts = if b.auto_retry { 4 } else { 1 };
+            let mut last_response = String::new();
             
-            let base_url = if b.api_url.is_empty() {
-                if b.api_mode == "local" {
-                    "http://localhost:11434/v1".to_string()
+            for attempt in 1..=max_attempts {
+                let prompt = resolve_expressions_in_text(&b.prompt, vars);
+                
+                let base_url = if b.api_url.is_empty() {
+                    if b.api_mode == "local" {
+                        "http://localhost:11434/v1".to_string()
+                    } else {
+                        "https://api.openai.com/v1".to_string()
+                    }
                 } else {
-                    "https://api.openai.com/v1".to_string()
-                }
-            } else {
-                b.api_url.trim_end_matches('/').to_string()
-            };
+                    b.api_url.trim_end_matches('/').to_string()
+                };
 
-            let url = if base_url.ends_with("/chat/completions") {
-                base_url
-            } else if base_url.ends_with("/v1") {
-                format!("{}/chat/completions", base_url)
-            } else {
-                format!("{}/v1/chat/completions", base_url)
-            };
+                let url = if base_url.ends_with("/chat/completions") {
+                    base_url
+                } else if base_url.ends_with("/v1") {
+                    format!("{}/chat/completions", base_url)
+                } else {
+                    format!("{}/v1/chat/completions", base_url)
+                };
 
-            let b64_img = if b.mode == "image" {
-                let x = eval_full(&b.x, vars) as i32;
-                let y = eval_full(&b.y, vars) as i32;
-                let w = (eval_full(&b.width, vars) as u32).max(1);
-                let hgt = (eval_full(&b.height, vars) as u32).max(1);
-                let screen = b.screen;
+                let b64_img = if b.mode == "image" {
+                    let x = eval_full(&b.x, vars) as i32;
+                    let y = eval_full(&b.y, vars) as i32;
+                    let w = (eval_full(&b.width, vars) as u32).max(1);
+                    let hgt = (eval_full(&b.height, vars) as u32).max(1);
+                    let screen = b.screen;
 
-                match capture_image_for_ocr(x, y, w, hgt, screen) {
-                    Ok(cropped) => {
-                        let mut buf = Vec::new();
-                        if cropped.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_ok() {
-                            use base64::Engine as _;
-                            Some(base64::engine::general_purpose::STANDARD.encode(&buf))
-                        } else {
+                    match capture_image_for_ocr(x, y, w, hgt, screen) {
+                        Ok(cropped) => {
+                            let mut buf = Vec::new();
+                            if cropped.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).is_ok() {
+                                use base64::Engine as _;
+                                Some(base64::engine::general_purpose::STANDARD.encode(&buf))
+                            } else {
+                                None
+                            }
+                        }
+                        Err(e) => {
+                            let _ = h.emit("engine://log", format!("[IA] Erreur capture image pour VLM: {}", e));
                             None
                         }
                     }
-                    Err(e) => {
-                        let _ = h.emit("engine://log", format!("[IA] Erreur capture image pour VLM: {}", e));
-                        None
+                } else {
+                    None
+                };
+
+                let messages = if let Some(b64) = b64_img {
+                    serde_json::json!([
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": format!("data:image/png;base64,{}", b64)
+                                    }
+                                }
+                            ]
+                        }
+                    ])
+                } else {
+                    serde_json::json!([
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ])
+                };
+
+                let payload = serde_json::json!({
+                    "model": b.model_name,
+                    "messages": messages
+                });
+
+                let client = reqwest::Client::new();
+                let mut req = client.post(&url);
+                if !b.api_key.is_empty() {
+                    req = req.bearer_auth(&b.api_key);
+                }
+
+                let res = req.json(&payload).send().await;
+                let response = match res {
+                    Ok(resp) => {
+                        if resp.status().is_success() {
+                            #[derive(serde::Deserialize)]
+                            struct ChatChoice {
+                                message: ChatMessage,
+                            }
+                            #[derive(serde::Deserialize)]
+                            struct ChatMessage {
+                                content: Option<String>,
+                            }
+                            #[derive(serde::Deserialize)]
+                            struct ChatResponse {
+                                choices: Option<Vec<ChatChoice>>,
+                            }
+
+                            match resp.json::<ChatResponse>().await {
+                                Ok(chat_resp) => {
+                                    chat_resp.choices
+                                        .and_then(|c| c.into_iter().next())
+                                        .and_then(|choice| choice.message.content)
+                                        .unwrap_or_else(|| "Réponse vide de l'API".to_string())
+                                }
+                                Err(e) => format!("Erreur désérialisation: {}", e)
+                            }
+                        } else {
+                            let status = resp.status();
+                            let body = resp.text().await.unwrap_or_default();
+                            format!("Erreur API ({}): {}", status, body)
+                        }
+                    }
+                    Err(e) => format!("Erreur de requête HTTP: {}", e)
+                };
+
+                last_response = response;
+
+                if b.auto_retry {
+                    match validate_ia_output(&last_response, &b.expected_type, &b.expected_schema) {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(err_msg) => {
+                            if attempt < max_attempts {
+                                let _ = h.emit("engine://log", format!(
+                                    "[IA] Tentative {}/{} échouée: {}. Nouvelle tentative dans 1s...",
+                                    attempt, max_attempts, err_msg
+                                ));
+                                tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                            } else {
+                                let _ = h.emit("engine://log", format!(
+                                    "[IA] Toutes les tentatives ({}) ont échoué. Dernière erreur: {}",
+                                    max_attempts, err_msg
+                                ));
+                            }
+                        }
                     }
                 }
-            } else {
-                None
-            };
-
-            let messages = if let Some(b64) = b64_img {
-                serde_json::json!([
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompt
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": format!("data:image/png;base64,{}", b64)
-                                }
-                            }
-                        ]
-                    }
-                ])
-            } else {
-                serde_json::json!([
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ])
-            };
-
-            let payload = serde_json::json!({
-                "model": b.model_name,
-                "messages": messages
-            });
-
-            let client = reqwest::Client::new();
-            let mut req = client.post(&url);
-            if !b.api_key.is_empty() {
-                req = req.bearer_auth(&b.api_key);
             }
 
-            let res = req.json(&payload).send().await;
-            let response = match res {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        #[derive(serde::Deserialize)]
-                        struct ChatChoice {
-                            message: ChatMessage,
-                        }
-                        #[derive(serde::Deserialize)]
-                        struct ChatMessage {
-                            content: Option<String>,
-                        }
-                        #[derive(serde::Deserialize)]
-                        struct ChatResponse {
-                            choices: Option<Vec<ChatChoice>>,
-                        }
-
-                        match resp.json::<ChatResponse>().await {
-                            Ok(chat_resp) => {
-                                chat_resp.choices
-                                    .and_then(|c| c.into_iter().next())
-                                    .and_then(|choice| choice.message.content)
-                                    .unwrap_or_else(|| "Réponse vide de l'API".to_string())
-                            }
-                            Err(e) => format!("Erreur désérialisation: {}", e)
-                        }
-                    } else {
-                        let status = resp.status();
-                        let body = resp.text().await.unwrap_or_default();
-                        format!("Erreur API ({}): {}", status, body)
-                    }
-                }
-                Err(e) => format!("Erreur de requête HTTP: {}", e)
-            };
-
             if !b.output_var.is_empty() {
-                vars.insert(b.output_var.clone(), response);
+                vars.insert(b.output_var.clone(), last_response);
             }
             "".into()
         }
@@ -3127,5 +3182,65 @@ fn get_tesseract_path() -> Option<String> {
         }
     }
     None
+}
+
+fn match_json_structure(val: &serde_json::Value, schema: &serde_json::Value) -> bool {
+    match (val, schema) {
+        (serde_json::Value::Object(v_map), serde_json::Value::Object(s_map)) => {
+            for (k, s_val) in s_map {
+                if let Some(v_val) = v_map.get(k) {
+                    if !match_json_structure(v_val, s_val) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            true
+        }
+        (serde_json::Value::Array(v_arr), serde_json::Value::Array(s_arr)) => {
+            if s_arr.is_empty() {
+                return true;
+            }
+            let schema_item = &s_arr[0];
+            for item in v_arr {
+                if !match_json_structure(item, schema_item) {
+                    return false;
+                }
+            }
+            true
+        }
+        (serde_json::Value::String(_), serde_json::Value::String(_)) => true,
+        (serde_json::Value::Number(_), serde_json::Value::Number(_)) => true,
+        (serde_json::Value::Bool(_), serde_json::Value::Bool(_)) => true,
+        (serde_json::Value::Null, serde_json::Value::Null) => true,
+        (_, serde_json::Value::Null) => true,
+        _ => false,
+    }
+}
+
+pub(crate) fn validate_ia_output(output: &str, expected_type: &str, expected_schema: &str) -> Result<(), String> {
+    if expected_type == "json" {
+        let val: serde_json::Value = serde_json::from_str(output)
+            .map_err(|e| format!("L'output n'est pas un JSON valide: {}", e))?;
+        
+        if !expected_schema.trim().is_empty() {
+            let schema: serde_json::Value = serde_json::from_str(expected_schema)
+                .map_err(|e| format!("Le schéma/architecture attendu n'est pas un JSON valide: {}", e))?;
+            
+            if !match_json_structure(&val, &schema) {
+                return Err("L'architecture de l'output JSON ne correspond pas au format attendu".to_string());
+            }
+        }
+    } else if expected_type == "regex" {
+        if !expected_schema.trim().is_empty() {
+            let re = regex::Regex::new(expected_schema)
+                .map_err(|e| format!("Expression régulière invalide: {}", e))?;
+            if !re.is_match(output) {
+                return Err(format!("L'output ne correspond pas à la regex attendue: {}", expected_schema));
+            }
+        }
+    }
+    Ok(())
 }
 

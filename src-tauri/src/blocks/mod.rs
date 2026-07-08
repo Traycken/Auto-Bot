@@ -166,6 +166,9 @@ pub struct IaBlock {
     #[serde(default)] pub width: String,
     #[serde(default)] pub height: String,
     #[serde(default)] pub screen: i32,
+    #[serde(default)] pub auto_retry: bool,
+    #[serde(default)] pub expected_type: String,
+    #[serde(default)] pub expected_schema: String,
 }
 
 fn default_gamepad_action() -> String { "button".into() }
@@ -389,6 +392,14 @@ pub struct OcrBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PixelCoordinate {
+    #[serde(default)] pub x: String,
+    #[serde(default)] pub y: String,
+    #[serde(default)] pub expected_hex: String,
+    #[serde(default)] pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PixelColorBlock {
     #[serde(default)]                        pub search_mode: String,
     #[serde(default="default_str_0")]       pub x: String,
@@ -408,6 +419,7 @@ pub struct PixelColorBlock {
     #[serde(default="default_cooldown_ms")] pub cooldown_ms: String,
     #[serde(default)]                       pub output_mode: String,
     #[serde(default)]                       pub infinite: bool,
+    #[serde(default)]                       pub pixels: Vec<PixelCoordinate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

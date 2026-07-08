@@ -280,10 +280,10 @@ function ColorField({ data, onChange }: { data:Record<string,unknown>; onChange:
 }
 
 // ── PixelColorFields ────────────────────────────────────────────────────────
-function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId }: { data:Record<string,unknown>; onChange:(p:Record<string,unknown>)=>void; picking: boolean; pickPixelAndCoords: () => void; nodeId: string }) {
+function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId }: { data:Record<string,unknown>; onChange:(p:Record<string,unknown>)=>void; picking: boolean; pickPixelAndCoords: (index?: number) => void; nodeId: string }) {
   const t = useEditorStore(s => s.t);
   const searchMode = (data.search_mode as string) ?? "pixel";
-  const outputMode = (data.output_mode as string) ?? "array";
+  const outputMode = (data.output_mode as string) ?? "branch";
   
   const pickRegion = async () => {
     try {
@@ -300,7 +300,7 @@ function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId 
       <div style={S.row}>
         <span style={S.label}>{t("inspector.pixel.search_mode_label", "Mode de recherche")}</span>
         <div style={{ display:"flex", gap:4 }}>
-          {([[ "pixel", "Pixel unique" ], [ "zone", "Zone" ]] as const).map(([mode,label]) => (
+          {([[ "pixel", "Pixel unique" ], [ "zone", "Zone" ], [ "multiple", "Séparée multiple" ]] as const).map(([mode,label]) => (
             <button key={mode} onClick={() => onChange({ search_mode:mode })} style={{
               ...S.btn, flex:1,
               background: searchMode===mode ? "#1D9E7522" : "#111113",
@@ -311,9 +311,9 @@ function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId 
         </div>
       </div>
       
-      {searchMode === "pixel" ? (
+      {searchMode === "pixel" && (
         <button
-          onClick={pickPixelAndCoords}
+          onClick={() => pickPixelAndCoords()}
           disabled={picking}
           style={{
             ...S.btn,
@@ -328,7 +328,9 @@ function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId 
           <i className={`ti ${picking ? "ti-loader" : "ti-color-picker"}`} style={{ marginRight: 6 }} />
           {picking ? t("inspector.pixel.picking_active", "Sélectionnez sur l'écran...") : t("inspector.pixel.picker_btn", "Pipette (Pos + Couleur)")}
         </button>
-      ) : (
+      )}
+
+      {searchMode === "zone" && (
         <div style={S.row}>
           <span style={S.label}>{t("inspector.generic.capture_zone", "Zone de Capture")}</span>
           <button onClick={pickRegion} style={{ ...S.btn, width: "100%", marginBottom: 10 }}>
@@ -343,7 +345,91 @@ function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId 
         </div>
       )}
 
-      <ColorField data={data} onChange={onChange} />
+      {searchMode === "multiple" && (
+        <div style={{ ...S.row, display: "flex", flexDirection: "column", gap: 8 }}>
+          <span style={S.label}>{t("inspector.pixel.multiple_list", "Pixels à vérifier")}</span>
+          {(((data.pixels as any[]) ?? [{ x: "0", y: "0", expected_hex: "#FF0000", label: "" }])).map((px, idx) => (
+            <div key={idx} style={{ display: "flex", gap: 4, alignItems: "center", border: "0.5px solid #2a2a2e", borderRadius: 4, padding: 6, background: "#0e0e10" }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+                <input
+                  type="text"
+                  value={px.label ?? ""}
+                  placeholder={`Pixel ${idx + 1}`}
+                  onChange={e => {
+                    const newPx = [...((data.pixels as any[]) ?? [])];
+                    newPx[idx] = { ...newPx[idx], label: e.target.value };
+                    onChange({ pixels: newPx });
+                  }}
+                  style={{ ...S.input, height: 20, fontSize: 10, padding: "2px 5px", background: "transparent", borderBottom: "0.5px solid #333", color: "#ddd", fontWeight: "bold" }}
+                />
+                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                  <SmartInput label="X" value={px.x} onChange={v => {
+                    const newPx = [...((data.pixels as any[]) ?? [])];
+                    newPx[idx] = { ...newPx[idx], x: v };
+                    onChange({ pixels: newPx });
+                  }} />
+                  <SmartInput label="Y" value={px.y} onChange={v => {
+                    const newPx = [...((data.pixels as any[]) ?? [])];
+                    newPx[idx] = { ...newPx[idx], y: v };
+                    onChange({ pixels: newPx });
+                  }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "center", width: 45 }}>
+                <span style={{ fontSize: 9, color: "#aaa" }}>Couleur</span>
+                <input
+                  type="color"
+                  value={px.expected_hex}
+                  onChange={e => {
+                    const newPx = [...((data.pixels as any[]) ?? [])];
+                    newPx[idx] = { ...newPx[idx], expected_hex: e.target.value.toUpperCase() };
+                    onChange({ pixels: newPx });
+                  }}
+                  style={{ width: 32, height: 20, border: "none", borderRadius: 2, background: "none", cursor: "pointer", padding: 0 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 3, marginTop: 12 }}>
+                <button
+                  onClick={async () => {
+                    try {
+                      await pickPixelAndCoords(idx);
+                    } catch {}
+                  }}
+                  disabled={picking}
+                  style={{ ...S.btn, padding: "0 6px", height: 26 }}
+                  title="Pipette pour ce pixel"
+                >
+                  <i className="ti ti-color-picker" />
+                </button>
+                {((data.pixels as any[]) ?? []).length > 1 && (
+                  <button
+                    onClick={() => {
+                      const newPx = [...((data.pixels as any[]) ?? [])];
+                      newPx.splice(idx, 1);
+                      onChange({ pixels: newPx });
+                    }}
+                    style={{ ...S.btn, padding: "0 6px", height: 26, color: "#E84C1E" }}
+                    title="Supprimer"
+                  >
+                    <i className="ti ti-trash" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={() => {
+              const currentList = (data.pixels as any[]) ?? [{ x: "0", y: "0", expected_hex: "#FF0000" }];
+              onChange({ pixels: [...currentList, { x: "0", y: "0", expected_hex: "#FF0000" }] });
+            }}
+            style={{ ...S.btn, alignSelf: "flex-start", fontSize: 11, padding: "4px 8px" }}
+          >
+            <i className="ti ti-plus" style={{ marginRight: 4 }} /> Ajouter un pixel
+          </button>
+        </div>
+      )}
+
+      {searchMode !== "multiple" && <ColorField data={data} onChange={onChange} />}
       <div style={S.row}>
         <span style={S.label}>{t("inspector.pixel.tolerance", "Tolérance")} ({(data.tolerance as number)??10})</span>
         <input type="range" min={0} max={255} step={1} value={(data.tolerance as number)??10} onChange={e => onChange({ tolerance:Number(e.target.value) })} style={{ width:"100%", accentColor:"#1D9E75" }} />
@@ -365,7 +451,7 @@ function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId 
       <div style={S.row}>
         <span style={S.label}>{t("inspector.image.output_mode_label", "Format de sortie")}</span>
         <div style={{ display:"flex", gap:4 }}>
-          {([[ "array", "Tableau (Array)" ], [ "grouped", "Groupé (Dict)" ]] as const).map(([mode,label]) => (
+          {([[ "branch", "Branchement (Trouvé/Non trouvé)" ], [ "array", "Tableau (Array)" ], [ "grouped", "Groupé (Dict)" ]] as const).map(([mode,label]) => (
             <button key={mode} onClick={() => onChange({ output_mode:mode })} style={{
               ...S.btn, flex:1,
               background: outputMode===mode ? "#1D9E7522" : "#111113",
@@ -391,7 +477,8 @@ function PixelColorFields({ data, onChange, picking, pickPixelAndCoords, nodeId 
                 screen: Number(data.screen ?? 0),
                 expectedHexes: hexes,
                 searchMode,
-                tolerance: Number(data.tolerance ?? 10)
+                tolerance: Number(data.tolerance ?? 10),
+                pixels: data.pixels ?? null,
               });
               const msg = res ? t("inspector.pixel.test.success", "Succès : La couleur correspond !") : t("inspector.pixel.test.failed", "Échec : La couleur ne correspond pas.");
               pushCmdLog(nodeId, {
@@ -715,6 +802,9 @@ function IaFields({ data, onChange, nodeId }: { data:Record<string,unknown>; onC
         w,
         h,
         screen,
+        autoRetry: !!data.auto_retry,
+        expectedType: String(data.expected_type ?? "json"),
+        expectedSchema: String(data.expected_schema ?? ""),
       });
 
       const msg = t("inspector.ia.response_prefix", "Réponse de l'IA :\n\n") + res;
@@ -866,6 +956,48 @@ function IaFields({ data, onChange, nodeId }: { data:Record<string,unknown>; onC
 
       {data.mode === "image" && (
         <ScreenPickerButton screen={Number(data.screen??0)} onSelect={s => onChange({ screen:s })} />
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 10 }}>
+        <input
+          type="checkbox"
+          id="ia_auto_retry"
+          checked={!!data.auto_retry}
+          onChange={e => onChange({ auto_retry: e.target.checked })}
+          style={{ width: 14, height: 14, cursor: "pointer" }}
+        />
+        <label htmlFor="ia_auto_retry" style={{ ...S.label, margin: 0, cursor: "pointer" }}>
+          {t("inspector.ia.auto_retry_label", "Auto-retry si mauvaise réponse")}
+        </label>
+      </div>
+
+      {!!data.auto_retry && (
+        <>
+          <div style={S.row}>
+            <span style={S.label}>{t("inspector.ia.expected_type_label", "Format attendu")}</span>
+            <select
+              value={(data.expected_type as string) ?? "json"}
+              onChange={e => onChange({ expected_type: e.target.value })}
+              style={{ ...S.input, background: "#111113", height: 25 }}
+            >
+              <option value="json">{t("inspector.ia.expected_type_json", "JSON Valide")}</option>
+              <option value="regex">{t("inspector.ia.expected_type_regex", "Expression Régulière (Regex)")}</option>
+            </select>
+          </div>
+          <div style={S.row}>
+            <span style={S.label}>
+              {data.expected_type === "regex" 
+                ? t("inspector.ia.expected_regex_label", "Expression régulière (Regex)") 
+                : t("inspector.ia.expected_schema_label", "Structure JSON attendue (Optionnel)")}
+            </span>
+            <textarea
+              value={(data.expected_schema as string) ?? ""}
+              onChange={e => onChange({ expected_schema: e.target.value })}
+              style={{ ...S.input, minHeight: 60, resize: "vertical", fontFamily: "monospace", fontSize: 11 }}
+              placeholder={data.expected_type === "regex" ? "Ex: ^[0-9]+$" : "Ex: {\"result\": \"\", \"score\": 0}"}
+            />
+          </div>
+        </>
       )}
 
       <div style={{ marginTop: 10, display: "flex", gap: 5, alignItems: "center" }}>
@@ -1147,7 +1279,7 @@ function ImageFields({ data, onChange, nodeId }: { data:Record<string,unknown>; 
       await message(t("inspector.image.capture_unavailable", "Capture indisponible dans ce contexte."), { kind: "error" });
     }
   };
-  const outputMode = (data.output_mode as string) ?? "array";
+  const outputMode = (data.output_mode as string) ?? "branch";
   return (
     <>
       <div style={S.row}>
@@ -1224,7 +1356,7 @@ function ImageFields({ data, onChange, nodeId }: { data:Record<string,unknown>; 
       <div style={S.row}>
         <span style={S.label}>{t("inspector.image.output_mode_label", "Format de sortie")}</span>
         <div style={{ display:"flex", gap:4 }}>
-          {([[ "array", "Tableau (Array)" ], [ "grouped", "Groupé (Dict)" ]] as const).map(([mode,label]) => (
+          {([[ "branch", "Branchement (Trouvé/Non trouvé)" ], [ "array", "Tableau (Array)" ], [ "grouped", "Groupé (Dict)" ]] as const).map(([mode,label]) => (
             <button key={mode} onClick={() => onChange({ output_mode:mode })} style={{
               ...S.btn, flex:1,
               background: outputMode===mode ? "#1D9E7522" : "#111113",
@@ -1993,7 +2125,7 @@ export function Inspector() {
   const activeTab = tabs.find(t => t.id === activeTabId);
   const node      = activeTab?.nodes.find(n => n.id === selectedNodeId);
 
-  const pickPixelAndCoords = async () => {
+  const pickPixelAndCoords = async (index?: number) => {
     if (!node) return;
     setPicking(true);
     try {
@@ -2007,15 +2139,26 @@ export function Inspector() {
         const b = parseInt(hex.slice(5,7), 16);
         const detectedScreen = await invoke<number>("get_screen_index_for_position", { x: pos.x, y: pos.y });
         
-        updateNodeData(node.id, {
-          x: String(pos.x),
-          y: String(pos.y),
-          screen: detectedScreen,
-          expected_hex: hex,
-          expected_r: r,
-          expected_g: g,
-          expected_b: b,
-        });
+        if (index !== undefined) {
+          const currentData = node.data as any;
+          const oldPixels = currentData.pixels ?? [];
+          const newPixels = [...oldPixels];
+          newPixels[index] = { x: String(pos.x), y: String(pos.y), expected_hex: hex };
+          updateNodeData(node.id, {
+            pixels: newPixels,
+            screen: detectedScreen,
+          });
+        } else {
+          updateNodeData(node.id, {
+            x: String(pos.x),
+            y: String(pos.y),
+            screen: detectedScreen,
+            expected_hex: hex,
+            expected_r: r,
+            expected_g: g,
+            expected_b: b,
+          });
+        }
       } else {
         const currentData = node.data as Record<string, unknown>;
         const screenIdx = Number(currentData?.screen ?? 0);
@@ -2024,15 +2167,25 @@ export function Inspector() {
           "capture_pixel_color",
           { x: r.x, y: r.y, screen: r.screen, expected: 0, tolerance: 0 }
         );
-        updateNodeData(node.id, {
-          x: String(r.x),
-          y: String(r.y),
-          screen: r.screen,
-          expected_hex: res.hex.toUpperCase(),
-          expected_r: res.r,
-          expected_g: res.g,
-          expected_b: res.b,
-        });
+        if (index !== undefined) {
+          const oldPixels = (currentData.pixels as any[]) ?? [];
+          const newPixels = [...oldPixels];
+          newPixels[index] = { x: String(r.x), y: String(r.y), expected_hex: res.hex.toUpperCase() };
+          updateNodeData(node.id, {
+            pixels: newPixels,
+            screen: r.screen,
+          });
+        } else {
+          updateNodeData(node.id, {
+            x: String(r.x),
+            y: String(r.y),
+            screen: r.screen,
+            expected_hex: res.hex.toUpperCase(),
+            expected_r: res.r,
+            expected_g: res.g,
+            expected_b: res.b,
+          });
+        }
       }
     } catch (err) {
       console.warn("Capture annulée ou erreur:", err);

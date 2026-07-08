@@ -105,9 +105,16 @@ export interface RandomBlock {
 
 // ── Vision ────────────────────────────────────────────────────────────────────
 
+export interface PixelCoordinate {
+  x: string;
+  y: string;
+  expected_hex: string;
+  label?: string;
+}
+
 export interface PixelColorBlock {
   kind: "pixel_color";
-  search_mode?: "pixel" | "zone";
+  search_mode?: "pixel" | "zone" | "multiple";
   x: string; y: string;
   region_w?: string; region_h?: string;
   screen: number; color_format: ColorFormat;
@@ -116,14 +123,15 @@ export interface PixelColorBlock {
   expected_h: number; expected_s: number; expected_v: number;
   tolerance: number; output_var: string;
   iterations: string; cooldown_ms: string;
-  output_mode?: "grouped" | "array";
+  output_mode?: "grouped" | "array" | "branch";
+  pixels?: PixelCoordinate[];
 }
 export interface ImageMatchBlock {
   kind: "image_match";
   templates_b64: string[]; region_x: string; region_y: string; region_w: string; region_h: string;
   screen: number; threshold: string; iterations: string; cooldown_ms: string; output_var: string;
   match_mode: "first" | "all";
-  output_mode?: "grouped" | "array"; // NEW: comment la donnée est formattée
+  output_mode?: "grouped" | "array" | "branch"; // NEW: comment la donnée est formattée
 }
 export interface OcrBlock {
   kind: "ocr";
@@ -234,6 +242,9 @@ export interface IaBlock {
   width?: string;
   height?: string;
   screen?: number;
+  auto_retry?: boolean;
+  expected_type?: string;
+  expected_schema?: string;
 }
 
 export interface VpoBlock {
@@ -331,9 +342,9 @@ export const BLOCK_CATALOG: BlockMeta[] = [
 
   // ── Vision ────────────────────────────────────────────────────────────────
   { kind: "pixel_color",  label: "Couleur pixel",     category: "vision", color: "#1D9E75", icon: "ti-color-picker",
-    defaultData: { search_mode: "pixel", x:"0", y:"0", region_w:"100", region_h:"100", screen:0, color_format:"hex" as ColorFormat, expected_hexes: ["#FF0000"], expected_hex:"#FF0000", expected_r:255, expected_g:0, expected_b:0, expected_h:0, expected_s:100, expected_v:100, tolerance:10, output_var:"pixelMatch", iterations:"1", cooldown_ms:"250", output_mode: "array" } },
+    defaultData: { search_mode: "pixel", x:"0", y:"0", region_w:"100", region_h:"100", screen:0, color_format:"hex" as ColorFormat, expected_hexes: ["#FF0000"], expected_hex:"#FF0000", expected_r:255, expected_g:0, expected_b:0, expected_h:0, expected_s:100, expected_v:100, tolerance:10, output_var:"pixelMatch", iterations:"1", cooldown_ms:"250", output_mode: "branch", pixels: [{ x: "0", y: "0", expected_hex: "#FF0000", label: "" }] } },
   { kind: "image_match",  label: "Comparateur image", category: "vision", color: "#1D9E75", icon: "ti-photo-search",
-    defaultData: { templates_b64:[], region_x:"0", region_y:"0", region_w:"400", region_h:"300", screen:0, threshold:"0.9", iterations:"1", cooldown_ms:"250", output_var:"imgMatch", match_mode:"first" as const, output_mode:"array" } },
+    defaultData: { templates_b64:[], region_x:"0", region_y:"0", region_w:"400", region_h:"300", screen:0, threshold:"0.9", iterations:"1", cooldown_ms:"250", output_var:"imgMatch", match_mode:"first" as const, output_mode:"branch" } },
   { kind: "ocr",          label: "OCR",               category: "vision", color: "#1D9E75", icon: "ti-scan",
     defaultData: { x:"0", y:"0", width:"300", height:"100", screen:0, lang:"fra", output_var:"ocrText", iterations:"1", cooldown_ms:"250", match_text:"", match_case:false, match_whole_word:false, use_regex:false, tolerance:0 } },
 
@@ -369,7 +380,7 @@ export const BLOCK_CATALOG: BlockMeta[] = [
   { kind: "console", label: "Console", category: "system", color: "#64748B", icon: "ti-terminal",
     defaultData: { text: "Log message: %myVar" } },
   { kind: "ia", label: "IA (AI Inférence)", category: "system", color: "#3B82F6", icon: "ti-brain",
-    defaultData: { mode: "text", prompt: "Explain %myVar", api_mode: "external", api_key: "", model_name: "gpt-4o", output_var: "response", api_url: "", x: "0", y: "0", width: "400", height: "300", screen: 0 } },
+    defaultData: { mode: "text", prompt: "Explain %myVar", api_mode: "external", api_key: "", model_name: "gpt-4o", output_var: "response", api_url: "", x: "0", y: "0", width: "400", height: "300", screen: 0, auto_retry: false, expected_type: "json", expected_schema: "" } },
   { kind: "vpo", label: "VPO (YOLO Vision)", category: "system", color: "#10B981", icon: "ti-eye",
     defaultData: { class_name: "person", threshold: "0.5", output_var: "vpoResult", x: "0", y: "0", width: "400", height: "300", screen: 0, model_name: "yolov8n.onnx", mode: "detect", yolo_version: "v8", yolo_size: "n" } },
 

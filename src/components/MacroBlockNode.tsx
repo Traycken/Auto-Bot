@@ -35,10 +35,13 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
     .filter(([k]) => !BLACKLIST.has(k))
     .slice(0, 3);
 
-  const hasDualHandles = (DUAL_HANDLE_KINDS.has(d.kind) && !d.infinite && d.output_mode !== "array" && d.output_mode !== "grouped") ||
+  const isMultiplePixel = d.kind === "pixel_color" && d.search_mode === "multiple" && d.output_mode === "branch";
+  const pixelsCount = isMultiplePixel ? (d.pixels?.length ?? 1) : 0;
+
+  const hasDualHandles = (DUAL_HANDLE_KINDS.has(d.kind) && !d.infinite && d.output_mode !== "array" && d.output_mode !== "grouped" && d.search_mode !== "multiple") ||
     (d.kind === "vpo" && d.mode === "detect" && typeof d.class_name === "string" && d.class_name.trim() !== "");
 
-  const isInfiniteSingleHandle = DUAL_HANDLE_KINDS.has(d.kind) && !!d.infinite && d.output_mode !== "array" && d.output_mode !== "grouped";
+  const isInfiniteSingleHandle = DUAL_HANDLE_KINDS.has(d.kind) && !!d.infinite && d.output_mode !== "array" && d.output_mode !== "grouped" && d.search_mode !== "multiple";
 
   const active = useEditorStore(s => s.activeNodeId === id);
   const waitProgress = useEditorStore(s => s.waitProgress[id]);
@@ -48,7 +51,7 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
   const prevHandles = useRef<string | null>(null);
 
   useEffect(() => {
-    const currentMode = hasDualHandles ? "dual" : isInfiniteSingleHandle ? "infinite" : LOOP_KINDS.has(d.kind) ? "loop" : "single";
+    const currentMode = hasDualHandles ? "dual" : isInfiniteSingleHandle ? "infinite" : LOOP_KINDS.has(d.kind) ? "loop" : isMultiplePixel ? `multiple_${pixelsCount}` : "single";
     if (prevHandles.current !== null && prevHandles.current !== currentMode) {
       updateNodeInternals(id);
       
@@ -58,6 +61,11 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
         validHandles.add("not_found");
       } else if (isInfiniteSingleHandle) {
         validHandles.add("found");
+      } else if (isMultiplePixel) {
+        for (let idx = 0; idx < pixelsCount; idx++) {
+          validHandles.add(`found_${idx}`);
+        }
+        validHandles.add("not_found");
       } else if (LOOP_KINDS.has(d.kind)) {
         validHandles.add("body");
         validHandles.add("end");
@@ -79,7 +87,7 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
       }
     }
     prevHandles.current = currentMode;
-  }, [hasDualHandles, isInfiniteSingleHandle, id, d.kind, updateNodeInternals]);
+  }, [hasDualHandles, isInfiniteSingleHandle, isMultiplePixel, pixelsCount, id, d.kind, updateNodeInternals]);
 
   const openHelp = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -238,8 +246,71 @@ export const MacroBlockNode = memo(function MacroBlockNode({ id, data, selected 
         </div>
       )}
 
+      {isMultiplePixel && (
+        <div style={{ display: "flex", flexDirection: "column", borderTop: "0.5px solid #1a1a1e" }}>
+          {Array.from({ length: pixelsCount }).map((_, idx) => {
+            const px = d.pixels?.[idx];
+            const name = px?.label || `Trouvé ${idx + 1}`;
+            return (
+              <div key={idx} style={{
+                height: 28,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0 10px",
+                borderBottom: "0.5px solid #1a1a1e",
+                position: "relative"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 1.5, background: px?.expected_hex || "#1D9E75", border: "0.5px solid #444", display: "inline-block" }} />
+                  <span style={{ fontSize: 9, color: "#aaa" }}>{name}</span>
+                </div>
+                <Handle
+                  type="source"
+                  id={`found_${idx}`}
+                  position={Position.Right}
+                  style={{
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "#1D9E75",
+                    border: "1.5px solid #111",
+                    width: 9,
+                    height: 9,
+                    right: -4
+                  }}
+                />
+              </div>
+            );
+          })}
+          <div style={{
+            height: 28,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 10px",
+            position: "relative"
+          }}>
+            <span style={{ fontSize: 9, color: "#E24B4A", fontWeight: "bold" }}>Non trouvé</span>
+            <Handle
+              type="source"
+              id="not_found"
+              position={Position.Right}
+              style={{
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "#E24B4A",
+                border: "1.5px solid #111",
+                width: 9,
+                height: 9,
+                right: -4
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Bottom handle(s) */}
-      {hasDualHandles ? (
+      {isMultiplePixel ? null : hasDualHandles ? (
         <>
           <div style={{ display:"flex", borderTop:"0.5px solid #1a1a1e", padding:"4px 10px 14px" }}>
             <span style={{ flex:1, textAlign:"center", fontSize:8, color:"#1D9E75" }}>{t("node.found", "Trouvé")}</span>

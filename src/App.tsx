@@ -324,7 +324,7 @@ function AppInner() {
       if (canvas) {
         const r = canvas.getBoundingClientRect();
         const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-        if (inside) addNode(d.kind, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+        if (inside) addNode(d.kind, screenToFlowPosition({ x: e.clientX - 100, y: e.clientY - 25 }));
       }
       dragRef.current = null; setDrag(null);
     };
@@ -564,16 +564,14 @@ function AppInner() {
       {/* Ghost drag */}
       {drag && (
         <div style={{
-          position: "fixed", left: drag.x - 88, top: drag.y - 18,
-          pointerEvents: "none", zIndex: 9998,
+          position: "fixed", left: drag.x - 100, top: drag.y - 25,
+          width: 200, minHeight: 50, pointerEvents: "none", zIndex: 9999,
           background: "#18181b", border: `1px solid ${drag.color}`,
-          borderRadius: 8, padding: "6px 14px",
-          fontSize: 11, fontFamily: "monospace", color: "#d0d0d0",
-          boxShadow: "0 4px 24px #000b",
-          display: "flex", alignItems: "center", gap: 7,
-          opacity: 0.92, whiteSpace: "nowrap",
+          borderRadius: 8, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+          color: "#eee", fontSize: 13, fontWeight: 500, opacity: 0.85,
+          boxShadow: "0 8px 30px rgba(0,0,0,0.5)"
         }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: drag.color, flexShrink: 0 }} />
+          <span style={{ width: 10, height: 10, borderRadius: "50%", background: drag.color, flexShrink: 0 }} />
           {drag.label}
         </div>
       )}
