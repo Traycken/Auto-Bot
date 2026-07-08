@@ -181,14 +181,10 @@ Les fonctions permettent de modulariser vos automatisations et de les réutilise
 | **`Suppr` / `Delete`** | Supprimer les nœuds ou connexions sélectionnés |
 
 <div align="center">
-  <img src="./1.png" alt="AutoBot" width="125">
+  <img src="./1.png">
   <br>
-  <span style="margin-top: 24px;"><strong>AutoBot</strong></span>
-  <br><br>
 </div>
 <div align="center">
-  <img src="./2.png" alt="AutoBot" width="125">
+  <img src="./2.png">
   <br>
-  <span style="margin-top: 24px;"><strong>AutoBot</strong></span>
-  <br><br>
 </div>
