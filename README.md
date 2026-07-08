@@ -186,19 +186,3 @@ Les champs textes et valeurs peuvent inclure des variables (`%maVar`) et des fon
 | **`Ctrl + C`** | Copier les nœuds sélectionnés |
 | **`Ctrl + V`** | Coller les nœuds copiés |
 | **`Suppr` / `Delete`** | Supprimer les nœuds ou connexions sélectionnés |
-
----
-
-## 🗺️ Roadmap & Évolutions futures
-
-* [ ] **OCR intégré** : Reconnaissance optique de caractères via `tesseract-rs` ou modèle ONNX local.
-* [ ] **Compilation Standalone** : Export d'un graphe de macro directement sous forme de binaire compilé Rust autonome.
-* [ ] **Gestion Undo / Redo** : Historique d'actions complet dans l'éditeur de graphes.
-* [ ] **Raccourcis globaux** : Enregistrement de raccourcis clavier système pour lancer et stopper les scripts même en arrière-plan.
-* [ ] **Support macOS renforcé** : Intégration fine des permissions d'accessibilité macOS.
-
----
-
-## 📄 Licence
-
-Ce projet est distribué sous licence MIT. Consultez le fichier [LICENSE](LICENSE) pour plus de détails.
