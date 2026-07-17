@@ -10,6 +10,8 @@ Build and execute desktop automation workflows through a visual node-based edito
 
 <br>
 
+[🇫🇷 Français](README.fr.md)
+
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8DB?logo=tauri\&logoColor=white)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust\&logoColor=white)](https://www.rust-lang.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react\&logoColor=white)](https://react.dev/)
