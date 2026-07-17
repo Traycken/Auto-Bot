@@ -1,190 +1,404 @@
 <div align="center">
-  <img src="./AutoBot.svg" alt="AutoBot" width="125">
-  <br>
-  <span style="margin-top: 24px;"><strong>AutoBot</strong></span>
-  <br><br>
+
+<img src="./AutoBot.svg" alt="Auto-Bot" width="140">
+
+# Auto-Bot
+
+### Visual desktop automation
+
+Build and execute desktop automation workflows through a visual node-based editor.
+
+<br>
+
+[![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8DB?logo=tauri\&logoColor=white)](https://tauri.app/)
+[![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust\&logoColor=white)](https://www.rust-lang.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react\&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 </div>
 
-[![Tauri Version](https://img.shields.io/badge/Tauri-v2.x-0F0F11?logo=tauri&logoColor=FFC131&labelColor=24292e)](https://tauri.app/)
-[![Rust](https://img.shields.io/badge/Rust-1.77%2B-000000?logo=rust&logoColor=white&labelColor=24292e)](https://www.rust-lang.org/)
-[![React](https://img.shields.io/badge/React-18.x-20232A?logo=react&logoColor=61DAFB&labelColor=24292e)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-007ACC?logo=typescript&logoColor=white&labelColor=24292e)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg?labelColor=24292e)](LICENSE)
+---
 
-**Auto Bot** est un éditeur de macros visuel puissant, rapide et moderne. Il combine la flexibilité d'un canvas nodal interactif (basé sur **React Flow / XYFlow**) avec la rapidité, la sécurité et la légèreté d'un moteur d'exécution natif écrit en **Rust** via **Tauri 2**.
+## About
 
-Conçu pour automatiser des tâches complexes sans écrire de code, Auto Bot vous permet de créer des séquences logiques, de simuler le clavier/souris, de manipuler des variables, de réaliser du traitement d'image (Template Matching, OCR) et de concevoir des fonctions hautement réutilisables.
+**Auto-Bot** is a visual desktop automation application created to solve a personal automation need.
+
+The project allows users to create workflows by connecting visual nodes instead of writing traditional automation scripts.
+
+It combines:
+
+* a visual node-based editor;
+* a Rust execution engine;
+* native mouse and keyboard automation;
+* variables and control flow;
+* reusable custom functions;
+* screen capture and image analysis.
+
+This repository is published as-is for anyone who may find the project useful.
 
 ---
 
-## ✨ Fonctionnalités clés
+## Features
 
-* **Visual Workflow Engine** : Éditeur nodal intuitif avec gestion d'onglets multiples. Créez plusieurs séquences et fonctions indépendamment dans la même session.
-* **Fonctions réutilisables (`.fnc.json`)** : Définissez vos propres blocs réutilisables avec arguments d'entrée typés et valeurs de retour paramétrables.
-* **Contrôle avancé du flux** : Boucles `FOR`, branchements conditionnels `IF`, blocs de calcul mathématique et assignation dynamique de variables.
-* **Automation Clavier & Souris native** : Moteur basé sur la crate `enigo` assurant des clics, déplacements de souris précis et des saisies clavier complexes.
-* **Vision artificielle** : Recherche de patterns sur l'écran (Template Matching) et analyse pixel.
-* **Logs & Console de Debug intégrés** : Suivi de l'exécution en temps réel dans l'interface pour tester et corriger rapidement vos graphes.
+### Visual workflow editor
+
+Create automation workflows using a node-based editor.
+
+Workflows can contain:
+
+* mouse actions;
+* keyboard actions;
+* delays;
+* variables;
+* mathematical operations;
+* random values;
+* loops;
+* conditions;
+* image recognition;
+* reusable functions.
+
+Multiple workflows and functions can be opened simultaneously through the tab system.
 
 ---
 
-## 🏗️ Architecture du projet
+### Native desktop automation
 
-Le projet est structuré en deux parties principales : le frontend sous React/TypeScript pour l'édition et le backend sous Rust/Tauri pour l'exécution des opérations système.
+The execution engine is written in Rust.
 
+Supported actions include:
+
+* moving the mouse;
+* left, right and middle clicks;
+* double clicks;
+* mouse scrolling;
+* keyboard shortcuts;
+* text input;
+* configurable delays.
+
+---
+
+### Reusable functions
+
+Automation logic can be extracted into reusable custom functions.
+
+Functions can define:
+
+* input arguments;
+* internal workflow logic;
+* return values.
+
+Functions are stored using the:
+
+```text
+.fnc.json
 ```
-auto-bot/
-├── src/                          # FRONTEND (React + TS + XYFlow)
-│   ├── App.tsx                    # Layout principal et gestionnaire d'onglets
-│   ├── main.tsx                   # Point d'entrée de l'application React
-│   ├── types/
-│   │   └── blocks.ts              # Modèles et typage TypeScript des blocs
+
+format.
+
+---
+
+### Control flow
+
+Auto-Bot supports:
+
+* `FOR` loops;
+* conditional execution;
+* variable assignment;
+* mathematical operations;
+* random values;
+* function calls.
+
+---
+
+### Screen analysis
+
+The project includes tools for interacting with and analyzing the screen.
+
+Current capabilities include:
+
+* pixel color detection;
+* template matching;
+* screen capture;
+* image processing.
+
+---
+
+## Architecture
+
+```text
+┌─────────────────────────────────────────────┐
+│              React / TypeScript             │
+│                                             │
+│  Visual Editor · Nodes · Inspector · Logs   │
+│                                             │
+└──────────────────────┬──────────────────────┘
+                       │
+                       │ Tauri IPC
+                       ▼
+┌─────────────────────────────────────────────┐
+│                  Rust Engine                │
+│                                             │
+│  Workflow Execution · Automation · Vision  │
+│  Variables · Functions · System Interaction │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+### Frontend
+
+* React
+* TypeScript
+* XYFlow
+* Zustand
+* Vite
+
+### Backend
+
+* Rust
+* Tauri 2
+* Tokio
+* Enigo
+* XCap
+* Image
+* ONNX Runtime
+* Serde
+
+---
+
+## Project structure
+
+```text
+Auto-Bot/
+├── src/
+│   ├── components/
 │   ├── store/
-│   │   └── editorStore.ts         # État global (Zustand) — gestion multi-graphes
-│   └── components/
-│       ├── TabBar.tsx             # Gestion des onglets de séquences et fonctions
-│       ├── MacroBlockNode.tsx     # Rendu générique des nœuds de macro
-│       ├── StartNode.tsx          # Point de départ unique d'une séquence
-│       ├── FunctionArgsNode.tsx   # Arguments d'entrée pour les fonctions
-│       ├── FunctionReturnNode.tsx # Valeur renvoyée par une fonction
-│       ├── FunctionCallNode.tsx   # Bloc d'invocation d'une fonction personnalisée
-│       ├── ForNode.tsx / IfNode.tsx # Structures de contrôle de flux
-│       ├── MathNode.tsx / RandomNode.tsx # Utilitaires de variables et calculs
-│       ├── Toolbar.tsx            # Palette des blocs disponibles
-│       ├── Inspector.tsx          # Éditeur de propriétés du bloc sélectionné
-│       └── LogPanel.tsx           # Console d'exécution et de débogage
+│   ├── types/
+│   ├── App.tsx
+│   └── main.tsx
 │
-└── src-tauri/                    # BACKEND (Rust / Tauri 2)
-    ├── tauri.conf.json            # Configuration système de Tauri
-    ├── Cargo.toml                 # Dépendances natives (enigo, xcap, ort, etc.)
-    └── src/
-        ├── main.rs                # Point d'entrée de l'exécutable
-        ├── lib.rs                 # Initialisation de l'application et dossiers
-        ├── blocks/mod.rs          # Structures Rust représentant les blocs
-        ├── engine/mod.rs          # Moteur d'exécution asynchrone des macros
-        └── ipc/mod.rs             # Commandes de communication Frontend/Backend
+├── src-tauri/
+│   ├── src/
+│   │   ├── blocks/
+│   │   ├── engine/
+│   │   ├── ipc/
+│   │   ├── lib.rs
+│   │   └── main.rs
+│   │
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+│
+├── AutoBot.svg
+├── package.json
+└── README.md
 ```
 
 ---
 
-## 🚀 Démarrage rapide
+## Requirements
 
-### Prérequis requis
+* Node.js 20+
+* npm 10+
+* Rust stable
+* Tauri 2.x
 
-| Outil | Version minimale |
-| :--- | :--- |
-| **Rust (stable)** | 1.77+ |
-| **Node.js** | 20+ |
-| **npm** | 10+ |
+For Windows development, install:
 
-### Installation des dépendances système
+* [Node.js](https://nodejs.org/)
+* [Rustup](https://rustup.rs/)
+* Microsoft Visual Studio Build Tools with the C++ desktop development workload.
 
-#### 🐧 Linux (Debian/Ubuntu)
-Installez les bibliothèques système nécessaires pour le rendu web, le contrôle clavier/souris et la capture d'écran :
+---
+
+## Installation
+
 ```bash
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev libxdo-dev libxtst-dev libx11-dev libxrandr-dev pkg-config
+git clone https://github.com/Traycken/Auto-Bot.git
+cd Auto-Bot
+npm install
 ```
 
-#### 🍎 macOS
-Installez les outils de ligne de commande Xcode :
+---
+
+## Development
+
 ```bash
-xcode-select --install
+npm run tauri dev
 ```
 
-#### 🪟 Windows
-Aucune dépendance système supplémentaire n'est requise. Veillez simplement à avoir installé [Rustup](https://rustup.rs/) et [Node.js](https://nodejs.org/).
+---
 
-### Lancement en mode développement
+## Production build
 
-1. Clonez le dépôt et installez les paquets Node :
-   ```bash
-   git clone https://github.com/votre-compte/auto-bot.git
-   cd auto-bot
-   npm install
-   ```
+```bash
+npm run tauri build
+```
 
-2. Lancez le serveur de développement Tauri :
-   ```bash
-   npm run tauri dev
-   ```
+The generated application packages are placed in:
 
-3. Compiler l'exécutable de production :
-   ```bash
-   npm run tauri build
-   ```
-   L'exécutable compilé sera disponible dans le dossier `src-tauri/target/release/`.
+```text
+src-tauri/target/release/bundle/
+```
 
 ---
 
-## 💡 Concepts fondamentaux
+## Workflow concepts
 
-### 🗂️ Gestion Multi-Onglets
-L'éditeur permet d'ouvrir plusieurs espaces de travail en parallèle :
-* **Séquence** : Un script complet destiné à être exécuté (commence toujours par un nœud unique **Départ**).
-* **Fonction** : Une sous-routine exportée sous format `.fnc.json` réutilisable dans vos séquences.
-* **Actions sur les onglets** : Double-cliquez pour renommer, sauvegardez avec `Ctrl+S` (ou l'icône disquette) et utilisez la croix pour fermer.
+### Sequence
 
-### 🧩 Fonctions personnalisées (`.fnc.json`)
+A **Sequence** is a complete workflow that can be executed.
 
-Les fonctions permettent de modulariser vos automatisations et de les réutiliser.
-
-#### 1. Création d'une fonction
-* Cliquez sur le bouton `+` dans la barre d'onglets et choisissez **Nouvelle fonction**.
-* L'onglet s'ouvre avec deux nœuds obligatoires et uniques :
-  * **ARGUMENTS** : Dans le panneau *Inspector*, listez les variables d'entrée requises (ex: `x`, `y`, `valeur`).
-  * **RETOUR** : Spécifiez la variable ou l'expression retournée (ex: `%mon_resultat%`).
-* Enregistrez la fonction. Elle est automatiquement stockée dans `<Dossier-Execution>/Fonctions/<nom>.fnc.json`.
-
-#### 2. Appel de la fonction
-* Dans n'importe quel onglet de **Séquence**, faites glisser le bloc **Appel Fonction** depuis la palette.
-* Dans l'Inspector, sélectionnez le fichier `.fnc.json`.
-* Le bloc s'adapte dynamiquement en affichant des champs pour chaque argument requis. Vous pouvez y injecter des valeurs statiques ou des variables existantes (format `%nom_variable%`).
-* Le résultat retourné sera disponible pour la suite du flux sous la variable `<NomFonction>_Return`.
+A sequence starts from a `START` node and follows the connected execution flow.
 
 ---
 
-## 📦 Catalogue de blocs
+### Function
 
-### 🖱️ Souris
-* **Déplacer la souris** (`mouse_move`) : Positionne le curseur à des coordonnées X/Y absolues ou relatives.
-* **Clic de souris** (`mouse_click`) : Clic gauche, droit ou milieu (simple ou double).
-* **Défilement** (`mouse_scroll`) : Scroll horizontal ou vertical.
+A **Function** is a reusable workflow component.
 
-### ⌨️ Clavier
-* **Appui touche** (`key_press`) : Presse une touche ou un raccourci clavier (ex: `ctrl+shift+t`).
-* **Saisir texte** (`type_text`) : Tape une chaîne de caractères caractère par caractère à la vitesse configurée.
+Functions can receive arguments and return values.
 
-### ⚙️ Contrôle & Variables
-* **Pause** (`wait`) : Suspend l'exécution pendant une durée définie (en millisecondes).
-* **Boucle FOR** (`for_loop`) : Exécute une boucle un nombre donné de fois avec variable d'itération accessible.
-* **Opérations Mathématiques** (`math`) : Exécute des calculs arithmétiques et stocke le résultat dans une variable.
-* **Assignation** (`set_variable`) : Définit ou met à jour une variable globale ou locale.
-* **Aléatoire** (`random`) : Génère un nombre, booléen, texte ou choisit un élément aléatoire dans une liste.
+Functions are stored as:
 
-### 👁️ Vision
-* **Vérifier couleur** (`pixel_color`) : Lit la couleur d'un pixel à l'écran pour aiguiller la logique.
-* **Template Matching** (`image_match`) : Recherche une portion d'image (ex: un bouton précis) sur l'écran.
-* **OCR** (`ocr`) : *À venir* — Extraction de texte depuis une zone écran.
+```text
+.fnc.json
+```
 
 ---
 
-## ⌨️ Raccourcis clavier de l'éditeur
+### Variables
 
-| Raccourci | Action associée |
-| :--- | :--- |
-| **`F6`** | Lancer / Arrêter l'exécution de la macro |
-| **`F8`** | Capturer la position actuelle du curseur (remplit les champs X/Y actifs dans l'Inspector) |
-| **`Ctrl + S`** | Enregistrer la séquence / fonction dans l'onglet actif |
-| **`Ctrl + C`** | Copier les nœuds sélectionnés |
-| **`Ctrl + V`** | Coller les nœuds copiés |
-| **`Suppr` / `Delete`** | Supprimer les nœuds ou connexions sélectionnés |
+Variables can be used to store and manipulate values throughout a workflow.
+
+Example:
+
+```text
+%counter%
+%username%
+%result%
+```
+
+---
+
+## Available blocks
+
+### Mouse
+
+* Move mouse
+* Left click
+* Right click
+* Middle click
+* Double click
+* Mouse scroll
+
+### Keyboard
+
+* Press a key
+* Keyboard shortcuts
+* Type text
+
+### Control flow
+
+* Wait
+* FOR loop
+* Conditional logic
+* Function calls
+
+### Variables and calculations
+
+* Set variable
+* Mathematical operations
+* Random values
+
+### Vision
+
+* Pixel color detection
+* Template matching
+* Screen capture
+* Image processing
+
+---
+
+## Keyboard shortcuts
+
+| Shortcut   | Action                               |
+| ---------- | ------------------------------------ |
+| `F6`       | Start / stop workflow execution      |
+| `F8`       | Capture current mouse position       |
+| `Ctrl + S` | Save current workflow                |
+| `Ctrl + C` | Copy selected nodes                  |
+| `Ctrl + V` | Paste nodes                          |
+| `Delete`   | Delete selected nodes or connections |
+
+---
+
+## Project status
+
+This project was created primarily for personal use.
+
+It is published publicly for anyone who may find it useful.
+
+There is no commitment to regular maintenance, support, updates or future development.
+
+If I need to modify the project in the future for my own needs, I may publish those changes when possible.
+
+The project is provided as-is.
+
+---
+
+## Forks and derivatives
+
+You are free to fork this project and create your own version.
+
+However, this project and its derivatives must remain **free and accessible without requiring payment for the software itself**.
+
+If you create a significant fork or derivative project, please consider clearly crediting the original project.
+
+---
+
+## Collaboration
+
+Although this is primarily a personal project, I may be open to welcoming a **principal co-creator**.
+
+This would only be considered for someone who:
+
+* has strong technical skills;
+* is genuinely interested in the project;
+* understands the existing architecture;
+* is willing to contribute meaningfully;
+* can bring the project further than I would be willing to do alone.
+
+If you are seriously interested in becoming a principal co-creator, you can contact me through GitHub.
+
+Please do not contact me simply to request basic support or ask me to implement features for you.
+
+---
+
+## Screenshots
 
 <div align="center">
-  <img src="./1.png">
-  <br>
+
+<img src="./1.png" alt="Auto-Bot workflow editor">
+
+<br><br>
+
+<img src="./2.png" alt="Auto-Bot interface">
+
 </div>
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
 <div align="center">
-  <img src="./2.png">
-  <br>
+
+**Auto-Bot**
+
+Created to solve a personal problem.
+Published in case it can solve someone else's.
+
 </div>
