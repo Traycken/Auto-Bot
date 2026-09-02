@@ -1,0 +1,30 @@
+# Rust & Cargo
+target/
+/target/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+src-tauri/binaries/
+
+# Node & Web
+node_modules/
+dist/
+build/
+
+# Env & OS
+.env
+.env.local
+.DS_Store
+Thumbs.db
+
+# Binaires & Installateurs
+*.dmg
+*.AppImage
+*.msi
+*.exe
+*.deb
+*.lnk
+*.pdb
+
+# Auto Bot
+Fonctions/
